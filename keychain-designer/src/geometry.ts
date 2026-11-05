@@ -936,3 +936,156 @@ export async function buildGriptok(text: string, fontOpt: FontOption): Promise<G
   const model = centred(mergeGeometries([floor, lip])!, body, GRIP_FLOOR + GRIP_LETTER_HEIGHT)
   return { ...model, parts: lineParts, diameter: GRIP_DIAMETER, lineCount }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Clicker name keychain: a housing that holds a keyboard switch (Cherry MX style) and a keycap-
+// like lid with the name. Housing: floor, cavity for the switch body, a 1.5 mm "plate" with the
+// 14 mm hole the switch clips into, and a low wall around the lid; a big round loop on the left.
+// Lid: plate with a cross socket underneath (printed upside down, no supports) and a shallow
+// name-shaped pocket on top; the name is its own piece that sits in the pocket.
+
+export interface ClickerParams {
+  /** Square hole the switch clips into, mm (MX: 14). */
+  hole: number
+  /** Plate thickness at the hole, mm (MX: 1.5). */
+  plate: number
+  /** Room below the plate top for the switch body + pins, mm. */
+  below: number
+  /** Clip undercut: square cavity under the plate, mm. */
+  undercut: number
+  /** Stem top above the plate top, mm. */
+  stemTop: number
+  /** Cross socket: arm length / arm width / depth, and the boss around it, mm. */
+  crossArm: number
+  crossWidth: number
+  socketDepth: number
+  boss: number
+}
+
+/** Usual Cherry MX figures; the shop measures its switches and adjusts. */
+export const MX_DEFAULTS: ClickerParams = {
+  hole: 14.0,
+  plate: 1.5,
+  below: 8.8,
+  undercut: 15.2,
+  stemTop: 10.2,
+  crossArm: 4.15,
+  crossWidth: 1.35,
+  socketDepth: 3.6,
+  boss: 5.6,
+}
+
+export const CLICKER_LENGTH = 35 // mm, fixed body length
+export const CLICKER_WIDTH = 21 // mm
+const CLICKER_RADIUS = 6
+const CLICKER_FLOOR = 1.2
+const CLICKER_WALL = 1.6 // wall around the lid
+const CLICKER_WALL_ABOVE = 6 // wall height above the plate
+const CLICKER_LID_CLEAR = 0.4 // gap between lid and wall
+const CLICKER_LID = 3 // lid plate thickness
+const CLICKER_NAME_POCKET = 0.6 // name pocket depth in the lid
+const CLICKER_NAME = 1.6 // name piece thickness (stands 1 mm proud)
+const CLICKER_NAME_MARGIN = 2 // mm between the name and the lid edge
+const CLICKER_RING_OUTER = 7.5 // loop radius
+const CLICKER_RING_INNER = 5
+const CLICKER_RING_THICK = 4
+
+export interface ClickerModel extends KeychainModel {
+  /** Print-ready pieces: housing as is, lid upside down, name flat. */
+  print: { base: THREE.BufferGeometry; lid: THREE.BufferGeometry; name: THREE.BufferGeometry }
+  nameHeight: number
+}
+
+function scaleAbout(paths: Path[], k: number, cx: number, cy: number): Path[] {
+  return paths.map((p) => p.map((q) => ({ X: Math.round((q.X / S - cx) * k * S), Y: Math.round((q.Y / S - cy) * k * S) })))
+}
+
+function slab(paths: Path[], z0: number, z1: number): THREE.BufferGeometry {
+  const g = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(paths)), { depth: z1 - z0, bevelEnabled: false })
+  g.translate(0, 0, z0)
+  return g
+}
+
+function square(side: number): Path {
+  return rect(-side / 2, -side / 2, side / 2, side / 2)
+}
+
+export async function buildClicker(text: string, fontOpt: FontOption, p: ClickerParams = MX_DEFAULTS): Promise<ClickerModel | null> {
+  const L = CLICKER_LENGTH
+  const W = CLICKER_WIDTH
+  const body = offset([rect(-L / 2 + CLICKER_RADIUS, -W / 2 + CLICKER_RADIUS, L / 2 - CLICKER_RADIUS, W / 2 - CLICKER_RADIUS)], CLICKER_RADIUS)
+  const lidOutline = offset(body, -(CLICKER_WALL + CLICKER_LID_CLEAR))
+
+  // Housing
+  const P = CLICKER_FLOOR + p.below // plate top
+  const cx = -L / 2 - CLICKER_RING_OUTER + 1.5
+  const ring = clip(
+    [circle(cx, 0, CLICKER_RING_OUTER, 96), rect(cx, -3, -L / 2 + 3, 3)],
+    [circle(cx, 0, CLICKER_RING_INNER, 96)],
+    ClipperLib.ClipType.ctDifference,
+  )
+  const housing = mergeGeometries([
+    slab(body, 0, CLICKER_FLOOR),
+    slab(clip(body, [square(p.undercut)], ClipperLib.ClipType.ctDifference), CLICKER_FLOOR, P - p.plate),
+    slab(clip(body, [square(p.hole)], ClipperLib.ClipType.ctDifference), P - p.plate, P),
+    slab(clip(body, offset(body, -CLICKER_WALL), ClipperLib.ClipType.ctDifference), P, P + CLICKER_WALL_ABOVE),
+    slab(union(ring), 0, CLICKER_RING_THICK),
+  ])!
+
+  // Name, fitted to the lid face
+  let name: Path[] = []
+  if (text.trim()) {
+    const raw = await textOutline(text.trim(), fontOpt, 10)
+    if (raw.length) {
+      const nb = boundsMm(raw)
+      const lb = boundsMm(lidOutline)
+      const k = Math.min(
+        (lb.maxX - lb.minX - 2 * CLICKER_NAME_MARGIN) / (nb.maxX - nb.minX),
+        (lb.maxY - lb.minY - 2 * CLICKER_NAME_MARGIN) / (nb.maxY - nb.minY),
+      )
+      name = scaleAbout(raw, k, (nb.minX + nb.maxX) / 2, (nb.minY + nb.maxY) / 2)
+    }
+  }
+  const nameHeight = name.length ? boundsMm(name).maxY - boundsMm(name).minY : 0
+
+  // Lid (assembled position: its underside rests on the stem top)
+  const c0 = P + p.stemTop
+  const top = c0 + CLICKER_LID
+  const cross = union([
+    rect(-p.crossArm / 2, -p.crossWidth / 2, p.crossArm / 2, p.crossWidth / 2),
+    rect(-p.crossWidth / 2, -p.crossArm / 2, p.crossWidth / 2, p.crossArm / 2),
+  ])
+  const bossRing = clip([circle(0, 0, p.boss / 2, 48)], cross, ClipperLib.ClipType.ctDifference)
+  const lidParts = [
+    slab(bossRing, c0 - p.socketDepth, c0),
+    slab(lidOutline, c0, top - CLICKER_NAME_POCKET),
+    slab(name.length ? clip(lidOutline, offset(name, DIM_FIT_CLEARANCE), ClipperLib.ClipType.ctDifference) : lidOutline, top - CLICKER_NAME_POCKET, top),
+  ]
+  const lid = mergeGeometries(lidParts)!
+  const nameGeo = name.length ? slab(name, top - CLICKER_NAME_POCKET, top - CLICKER_NAME_POCKET + CLICKER_NAME) : new THREE.BufferGeometry()
+
+  // Print-ready copies
+  const flip = new THREE.Matrix4().makeRotationX(Math.PI)
+  const lidPrint = lid.clone().applyMatrix4(flip)
+  lidPrint.computeBoundingBox()
+  lidPrint.translate(0, 0, -lidPrint.boundingBox!.min.z)
+  const namePrint = nameGeo.clone()
+  if (name.length) {
+    namePrint.computeBoundingBox()
+    namePrint.translate(0, 0, -namePrint.boundingBox!.min.z)
+  }
+
+  housing.computeBoundingBox()
+  const hb = housing.boundingBox!
+  const height = (name.length ? top - CLICKER_NAME_POCKET + CLICKER_NAME : top)
+  return {
+    plate: housing,
+    text: name.length ? mergeGeometries([lid, nameGeo])! : lid,
+    parts: name.length ? [lid, nameGeo] : [lid],
+    width: hb.max.x - hb.min.x,
+    length: hb.max.y - hb.min.y,
+    height,
+    print: { base: housing, lid: lidPrint, name: namePrint },
+    nameHeight,
+  }
+}

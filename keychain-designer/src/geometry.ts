@@ -768,17 +768,22 @@ export async function textOutline(text: string, fontOpt: FontOption, sizeMm: num
 }
 
 // ---------------------------------------------------------------------------------------------
-// Griptok top: the words fill the whole disc like a stamp. Up to three lines, each stretched to
-// the width of the circle at its height, packed against each other and trimmed round, as
-// dimensional letters in the locating pocket of a base glued onto a ready-made Ø35 mm grip.
+// Griptok top: one line of dimensional letters warped to fill the whole disc, like a fisheye:
+// the middle letters stretch from the top of the circle to the bottom, the end letters bow
+// to follow its left and right edges. The letters sit in the locating pocket of a round base
+// that is glued onto a ready-made Ø35 mm grip.
 
 export const GRIP_DIAMETER = 35 // mm, the grip it is glued on
 export const GRIP_LEVELS = [4, 3.5, 3] // mm letter heights, cycled
-export const GRIP_MAX_LETTERS = 12
-export const GRIP_MAX_LINES = 3
+export const GRIP_MAX_LETTERS = 10
 const GRIP_FLOOR = 1 // mm base floor
 const GRIP_LIP = 1.2 // mm rim above the floor
 const GRIP_WALL = 1.5 // mm from the disc edge to the letters (rim wall + fit clearance)
+const GRIP_OVERLAP_SCALE = 0.35 // letters on a griptok only need to hold, not sink into each other
+const GRIP_OVERFLOW = 1.04 // the warp reaches slightly past the circle; the round trim cuts it off
+// How far across the circle the word reaches (1 = edge to edge). Below 1 the end letters keep
+// some height instead of being squeezed to a point at the far left and right.
+const GRIP_SPREAD = 0.9
 
 const THAI_MARK = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/
 
@@ -787,211 +792,68 @@ export function countLetters(text: string): number {
   return Array.from(text.replace(/\s/g, '')).filter((ch) => !THAI_MARK.test(ch)).length
 }
 
-/**
- * Lines for the disc. Explicit line breaks win; otherwise words become lines when there are 2–3,
- * else the letters are shared out evenly (4 or fewer: one line, up to 8: two, more: three).
- */
-export function gripLines(text: string): string[] {
-  const explicit = text.split(/\n/).map((l) => l.trim()).filter(Boolean)
-  if (explicit.length > 1) return explicit.slice(0, GRIP_MAX_LINES)
-  const one = explicit[0] ?? ''
-  const words = one.split(/\s+/).filter(Boolean)
-  if (words.length >= 2 && words.length <= GRIP_MAX_LINES) return words
-  const flat = words.join('')
-  const total = countLetters(flat)
-  const n = total <= 4 ? 1 : total <= 8 ? 2 : 3
-  if (n === 1) return [flat]
-  const lines: string[] = []
-  let cur = ''
-  let count = 0
-  for (const ch of Array.from(flat)) {
-    const isLetter = !THAI_MARK.test(ch)
-    // Break before a letter (never before a mark) once this line has its share.
-    if (isLetter && count >= Math.round(((lines.length + 1) * total) / n) && lines.length < n - 1) {
-      lines.push(cur)
-      cur = ''
-    }
-    cur += ch
-    if (isLetter) count++
-  }
-  lines.push(cur)
-  return lines.filter(Boolean)
-}
-
-/** Words (Thai has no spaces, so use the browser's Thai word breaker when there is one). */
-function words(text: string): string[] {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  const Seg = (Intl as unknown as { Segmenter?: new (l: string, o: { granularity: string }) => { segment(t: string): Iterable<{ segment: string; isWordLike?: boolean }> } }).Segmenter
-  if (!Seg) return flat.split(' ')
-  const out: string[] = []
-  for (const part of new Seg('th', { granularity: 'word' }).segment(flat)) {
-    if (part.segment.trim() === '') continue
-    // Punctuation and stray marks stick to the word before them.
-    if (!part.isWordLike && out.length) out[out.length - 1] += part.segment
-    else out.push(part.segment)
-  }
-  return out
-}
-
-/**
- * Ways to put the text on 1, 2 or 3 lines, breaking only between words and keeping the lines as
- * even as possible. A single long word may be split between letters as a last resort.
- */
-function splitOptions(text: string): string[][] {
-  const ws = words(text)
-  const flat = ws.join('')
-  const out: string[][] = [[flat]]
-  const size = (w: string[]) => countLetters(w.join(''))
-  for (let n = 2; n <= GRIP_MAX_LINES; n++) {
-    if (ws.length >= n) {
-      // Try every way to cut the word list into n runs; keep the most even one.
-      let best: string[] | null = null
-      let worst = Infinity
-      const cut = (start: number, left: number, acc: string[]) => {
-        if (left === 1) {
-          const lines = [...acc, ws.slice(start).join('')]
-          const counts = lines.map((l) => countLetters(l))
-          const spread = Math.max(...counts) - Math.min(...counts)
-          if (spread < worst) {
-            worst = spread
-            best = lines
-          }
-          return
-        }
-        for (let i = start + 1; i <= ws.length - left + 1; i++) cut(i, left - 1, [...acc, ws.slice(start, i).join('')])
-      }
-      cut(0, n, [])
-      if (best) out.push(best)
-    } else if (ws.length === 1 && size(ws) >= n * 3) {
-      // One long word: share its letters out (marks stay with their letter).
-      const total = size(ws)
-      const lines: string[] = []
-      let cur = ''
-      let count = 0
-      for (const ch of Array.from(flat)) {
-        const isLetter = !THAI_MARK.test(ch)
-        if (isLetter && lines.length < n - 1 && count >= Math.round(((lines.length + 1) * total) / n)) {
-          lines.push(cur)
-          cur = ''
-        }
-        cur += ch
-        if (isLetter) count++
-      }
-      lines.push(cur)
-      out.push(lines)
-    }
-  }
-  return out
-}
-
-function transform(paths: Path[], f: (x: number, y: number) => [number, number]): Path[] {
-  return paths.map((p) =>
-    p.map((q) => {
-      const [x, y] = f(q.X / S, q.Y / S)
-      return { X: Math.round(x * S), Y: Math.round(y * S) }
-    }),
-  )
+/** Add points so no edge is longer than maxMm (needed before warping straight edges). */
+function densify(paths: Path[], maxMm: number): Path[] {
+  const max = maxMm * S
+  return paths.map((p) => {
+    const out: Path = []
+    p.forEach((a, i) => {
+      const b = p[(i + 1) % p.length]
+      const n = Math.max(1, Math.ceil(Math.hypot(b.X - a.X, b.Y - a.Y) / max))
+      for (let k = 0; k < n; k++) out.push({ X: Math.round(a.X + ((b.X - a.X) * k) / n), Y: Math.round(a.Y + ((b.Y - a.Y) * k) / n) })
+    })
+    return out
+  })
 }
 
 export interface GriptokModel extends KeychainModel {
   diameter: number
-  lines: string[]
-}
-
-const GRIP_OVERLAP_SCALE = 0.35 // letters on a griptok only need to hold, not sink into each other
-const GRIP_OVERFLOW = 1.08 // a line may reach this far past the circle; the round trim cuts it off
-const GRIP_MAX_STRETCH = 1.4
-const GRIP_MIN_STRETCH = 0.8
-
-/** Stack the lines and fit them into the disc. Returns the trimmed letters and the letter height. */
-async function fitGrip(lines: string[], fontOpt: FontOption) {
-  const REF = 20 // lay out at 20 mm (same joining rules as the keychains), then fit
-  const laid = (await Promise.all(lines.map((l) => layoutLetters(l, fontOpt, REF, true, GRIP_OVERLAP_SCALE)))).filter((l) => l.length > 0)
-  if (laid.length === 0) return null
-
-  // 1. Centre each line on x = 0 and stack them, pushing each line up into the one above until
-  //    they just hold each other.
-  const stacked: Path[][] = []
-  let above: Path[] = []
-  let bottomOfAbove = 0
-  for (const line of laid) {
-    const lb = boundsMm(union(line.flat()))
-    const cx = (lb.minX + lb.maxX) / 2
-    const start = bottomOfAbove - lb.maxY // this line's top touching the bottom of the one above
-    const at = (dy: number) => line.map((l) => transform(l, (x, y) => [x - cx, y + start + dy]))
-    let dy = 0
-    if (above.length > 0) {
-      const lh = lb.maxY - lb.minY
-      const need = 0.004 * lh * lh // just enough to hold; deeper overlaps make the lines hard to read
-      let best = { dy: 0, o: 0 }
-      for (let d = 0; d <= lh * 0.35; d += lh * 0.01) {
-        const o = areaMm2(clip(union(at(d).flat()), above, ClipperLib.ClipType.ctIntersection))
-        if (o > best.o) best = { dy: d, o }
-        if (o >= need) break
-      }
-      dy = best.dy
-    }
-    const placedLine = at(dy)
-    stacked.push(...placedLine)
-    above = union(placedLine.flat())
-    bottomOfAbove = boundsMm(above).minY
-  }
-
-  // 2. Fit: each line may be stretched sideways to fill the circle at its height and may poke out a
-  //    little past it; find the biggest scale where every line still fits.
-  const R = GRIP_DIAMETER / 2 - GRIP_WALL
-  const Ro = R * GRIP_OVERFLOW
-  const ab = boundsMm(union(stacked.flat()))
-  const midY = (ab.minY + ab.maxY) / 2
-  const letterLine = laid.flatMap((line, i) => line.map(() => i))
-  const lineBox = laid.map((_, i) => boundsMm(union(stacked.filter((_, j) => letterLine[j] === i).flat())))
-  const room = (b: ReturnType<typeof boundsMm>, k: number) => {
-    const yFar = Math.max(Math.abs((b.maxY - midY) * k), Math.abs((b.minY - midY) * k))
-    return Math.sqrt(Math.max(Ro * Ro - yFar * yFar, 0))
-  }
-  const halfW = (b: ReturnType<typeof boundsMm>, k: number) => Math.max(Math.abs(b.minX), Math.abs(b.maxX)) * k
-  const fits = (k: number) => lineBox.every((b) => halfW(b, k) * GRIP_MIN_STRETCH <= room(b, k) && room(b, k) > 0)
-  let lo = 0
-  let hi = (2 * Ro) / (ab.maxY - ab.minY)
-  for (let i = 0; i < 30; i++) {
-    const mid = (lo + hi) / 2
-    if (fits(mid)) lo = mid
-    else hi = mid
-  }
-  const k = lo
-  const stretch = lineBox.map((b) => Math.min(GRIP_MAX_STRETCH, Math.max(GRIP_MIN_STRETCH, room(b, k) / halfW(b, k))))
-
-  const disc = [circle(0, 0, R, 160)]
-  const band = ((ab.maxY - ab.minY) * k) / laid.length // about one line's height, for stem sizes
-  const letters: Path[][] = []
-  stacked.forEach((l, j) => {
-    const sx = stretch[letterLine[j]] * k
-    const placed = transform(l, (x, y) => [x * sx, (y - midY) * k])
-    // Trim to the circle, drop crumbs the trim leaves, re-join what is left of the letter.
-    const kept = clip(placed, disc, ClipperLib.ClipType.ctIntersection).filter(
-      (p) => Math.abs(ClipperLib.Clipper.Area(p)) / (S * S) >= 0.6 || !ClipperLib.Clipper.Orientation(p),
-    )
-    if (kept.some((p) => ClipperLib.Clipper.Orientation(p))) letters.push(joinLetterPieces(kept, band))
-  })
-  return letters.length ? { letters, band, cap: REF * k } : null
 }
 
 export async function buildGriptok(text: string, fontOpt: FontOption): Promise<GriptokModel | null> {
-  // Lines the customer chose (line breaks or 2–3 words) are kept; otherwise try 1, 2 and 3 lines
-  // and keep the one that gives the biggest letters.
-  const given = gripLines(text)
-  if (given.length === 0) return null
-  const explicit = /\n/.test(text.trim()) || given.length > 1 && text.trim().split(/\s+/).length === given.length
-  const options = explicit ? [given] : splitOptions(text)
-  let best: { lines: string[]; fit: NonNullable<Awaited<ReturnType<typeof fitGrip>>> } | null = null
-  for (const lines of options) {
-    const fit = await fitGrip(lines, fontOpt)
-    if (fit && (!best || fit.cap > best.fit.cap)) best = { lines, fit }
+  const line = text.replace(/\s+/g, ' ').trim()
+  if (!line) return null
+  const REF = 20 // lay out at 20 mm (same joining rules as the keychains), then warp
+  const laid = await layoutLetters(line, fontOpt, REF, true, GRIP_OVERLAP_SCALE)
+  if (laid.length === 0) return null
+
+  // Fisheye warp: x across the word maps linearly across the circle; at each x the word's full
+  // height maps onto the circle's full height there.
+  const R = GRIP_DIAMETER / 2 - GRIP_WALL
+  const Re = R * GRIP_OVERFLOW
+  const lb = boundsMm(union(laid.flat()))
+  const w = lb.maxX - lb.minX
+  const h = lb.maxY - lb.minY
+  // Vertical: the letter body (baseline to capital height) gets the room; whatever sits above
+  // (Thai vowel/tone marks, ascenders) or below (descenders, Thai tails) is squeezed to half scale.
+  const below = Math.max(0, -lb.minY)
+  const above = Math.max(0, lb.maxY - REF)
+  const weight = below * 0.5 + REF + above * 0.5
+  const vOf = (y: number) =>
+    y < 0 ? ((y - lb.minY) * 0.5) / weight : y <= REF ? (below * 0.5 + y) / weight : (below * 0.5 + REF + (y - REF) * 0.5) / weight
+  const warp = (paths: Path[]): Path[] =>
+    densify(paths, Math.min(w, h) / 60).map((p) =>
+      p.map((q) => {
+        const u = (q.X / S - lb.minX) / w
+        const v = vOf(q.Y / S)
+        const X = (2 * u - 1) * Re * GRIP_SPREAD
+        const half = Math.sqrt(Math.max(Re * Re - X * X, 0))
+        const Y = (2 * v - 1) * half
+        return { X: Math.round(X * S), Y: Math.round(Y * S) }
+      }),
+    )
+
+  const disc = [circle(0, 0, R, 160)]
+  const band = R // stem sizes for joining pieces
+  const letters: Path[][] = []
+  for (const l of laid) {
+    // Trim to the circle, drop crumbs the trim leaves, re-join what is left of the letter.
+    const kept = clip(union(warp(l)), disc, ClipperLib.ClipType.ctIntersection).filter(
+      (p) => Math.abs(ClipperLib.Clipper.Area(p)) / (S * S) >= 0.6 || !ClipperLib.Clipper.Orientation(p),
+    )
+    if (kept.some((p) => ClipperLib.Clipper.Orientation(p))) letters.push(joinLetterPieces(kept, band / 2))
   }
-  if (!best) return null
-  const { lines } = best
-  const { letters, band } = best.fit
-  const disc = [circle(0, 0, GRIP_DIAMETER / 2 - GRIP_WALL, 160)]
+  if (letters.length === 0) return null
 
   // Everything must print as one piece: a letter that touches none of the ones before it gets a stem.
   let placed: Path[] = []
@@ -1016,5 +878,5 @@ export async function buildGriptok(text: string, fontOpt: FontOption): Promise<G
   })
   const body = parts.length === 1 ? parts[0] : mergeGeometries(parts)!
   const model = centred(mergeGeometries([floor, lip])!, body, GRIP_FLOOR + Math.max(...GRIP_LEVELS.slice(0, letters.length)))
-  return { ...model, diameter: GRIP_DIAMETER, lines }
+  return { ...model, diameter: GRIP_DIAMETER }
 }

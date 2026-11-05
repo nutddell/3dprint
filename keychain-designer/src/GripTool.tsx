@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { FONTS, type FontOption } from './fonts'
-import { buildGriptok, countLetters, GRIP_DIAMETER, GRIP_LEVELS, GRIP_MAX_LETTERS, GRIP_MAX_LINES, type GriptokModel } from './geometry'
+import { buildGriptok, countLetters, GRIP_DIAMETER, GRIP_LEVELS, GRIP_MAX_LETTERS, type GriptokModel } from './geometry'
 import { ColorField, DownloadField, PreviewCard } from './shared'
 import { FontGroup } from './TextTool'
 
-/** Griptok top: words filling the whole Ø35 mm disc as dimensional letters, on a base with a locating rim. */
+/** Griptok top: one word warped to fill the whole Ø35 mm disc as dimensional letters, on a base with a locating rim. */
 export default function GripTool({ dark }: { dark: boolean }) {
-  const [text, setText] = useState('เฮง เฮง เฮง')
+  const [text, setText] = useState('รวย')
   const [font, setFont] = useState<FontOption>(FONTS.find((f) => f.id === 'kanit')!)
   const [color, setColor] = useState('#f6c6d6')
   const [baseColor, setBaseColor] = useState('#ffffff')
@@ -44,7 +44,7 @@ export default function GripTool({ dark }: { dark: boolean }) {
     // Thai marks are free; anything past the letter or line limit is cut off (also when pasting).
     let out = ''
     for (const ch of Array.from(v)) {
-      if (ch === '\n' && out.split('\n').length >= GRIP_MAX_LINES) break
+      if (ch === '\n') continue // one line only
       if (countLetters(out + ch) > GRIP_MAX_LETTERS) break
       out += ch
     }
@@ -66,19 +66,17 @@ export default function GripTool({ dark }: { dark: boolean }) {
       <section className="panel card">
         <div className="field">
           <label htmlFor="grip-text">ข้อความบนหัวกริป</label>
-          <textarea
+          <input
             id="grip-text"
             className="text-input"
-            rows={3}
             value={text}
-            placeholder="เช่น เฮง เฮง เฮง หรือ รวย"
+            placeholder="เช่น รวย, ปัง, Lucky"
             onChange={(e) => onText(e.target.value)}
           />
           <div className="sub">
-            {letters}/{GRIP_MAX_LETTERS} ตัวอักษร (สระ/วรรณยุกต์ไม่นับ) · ไม่เกิน {GRIP_MAX_LINES} บรรทัด · ตัวอักษรขยายเต็มวง
-            เว้นวรรคหรือกด Enter เพื่อขึ้นบรรทัดใหม่ ถ้าไม่แบ่งเอง ระบบจะแบ่งให้
+            {letters}/{GRIP_MAX_LETTERS} ตัวอักษร (สระ/วรรณยุกต์ไม่นับ) · คำเดียวบรรทัดเดียว ยืดเต็มวง: ตัวกลางสูงเต็มวง
+            ตัวริมซ้ายขวาโค้งตามขอบ
           </div>
-          {model && model.lines.length > 1 && <div className="sub">แบ่งเป็น: {model.lines.join(' / ')}</div>}
           {error && <div className="error">{error}</div>}
         </div>
 

@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react'
 import DimTool from './DimTool'
+import GripTool from './GripTool'
 import ImageTool from './ImageTool'
 import TextTool from './TextTool'
 import TwoSidedTool from './TwoSidedTool'
 
 const LOGO_URL = `${import.meta.env.BASE_URL}logo.png`
 
-type ToolId = 'text' | 'image' | 'dim' | 'two'
+type ToolId = 'text' | 'image' | 'dim' | 'two' | 'grip'
 
 const TOOLS: { id: ToolId | null; label: string; icon: string }[] = [
   { id: 'text', label: 'การทำพวงกุญแจ 3D', icon: '🔑' },
   { id: 'image', label: 'ทำพวงกุญแจจากรูป (2 สี)', icon: '🖼️' },
   { id: 'dim', label: 'พวงกุญแจตัวอักษรมิติ', icon: '🔠' },
   { id: 'two', label: 'พวงกุญแจชื่อ + โลโก้ (หน้า-หลัง)', icon: '🔄' },
-  ...Array.from({ length: 2 }, () => ({ id: null, label: 'เร็วๆ นี้', icon: '' })),
+  { id: 'grip', label: 'หัว Griptok ชื่อตัวอักษรมิติ', icon: '📱' },
+  ...Array.from({ length: 1 }, () => ({ id: null, label: 'เร็วๆ นี้', icon: '' })),
 ]
 
 function readSaved(key: string): string | null {
@@ -36,7 +38,7 @@ export default function App() {
   const [dark, setDark] = useState(() => readSaved('theme') === 'dark')
   const [tool, setTool] = useState<ToolId>(() => {
     const saved = readSaved('tool')
-    return saved === 'image' || saved === 'dim' || saved === 'two' ? saved : 'text'
+    return saved === 'image' || saved === 'dim' || saved === 'two' || saved === 'grip' ? saved : 'text'
   })
 
   useEffect(() => {
@@ -101,6 +103,9 @@ export default function App() {
       </div>
       <div hidden={tool !== 'two'}>
         <TwoSidedTool dark={dark} />
+      </div>
+      <div hidden={tool !== 'grip'}>
+        <GripTool dark={dark} />
       </div>
     </div>
   )

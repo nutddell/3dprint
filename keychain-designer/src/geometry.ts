@@ -429,10 +429,12 @@ function joinLetterPieces(letter: Path[], sizeMm: number): Path[] {
     const lx = (lb.left + lb.right) / 2 / S
     const ly = (lb.top + lb.bottom) / 2 / S
     const loosePaths = [loose.Contour()]
-    const need = stem * 0.8 // mm² the stem must share with each side
+    const need = stem * 0.8 // mm² the stem must share with the letter
+    // A thin mark cannot share that much with a stem; a quarter of its own area is enough to hold it.
+    const needLoose = Math.min(need, 0.25 * Math.abs(areaMm2(loosePaths)))
     const bites = (bar: Path) =>
       areaMm2(clip([bar], others, ClipperLib.ClipType.ctIntersection)) > need &&
-      areaMm2(clip([bar], loosePaths, ClipperLib.ClipType.ctIntersection)) > need
+      areaMm2(clip([bar], loosePaths, ClipperLib.ClipType.ctIntersection)) > needLoose
     // Try the stem at several spots across the piece and keep the shortest one that reaches.
     const across = (from: number, to: number) => {
       const spots = [(from + to) / 2, from + stem / 2, to - stem / 2, from + (to - from) / 4, to - (to - from) / 4]
@@ -471,27 +473,12 @@ function joinLetterPieces(letter: Path[], sizeMm: number): Path[] {
  * so they always overlap, and letter heights step through DIM_LEVELS so the letters stay readable.
  */
 /**
- * 'joined': one piece, letters pushed into each other, no base.
- * 'base': letters at the font's own spacing on a separate thin base (with the loop) that follows
- *         their outline; two pieces printed apart and glued together, or printed in two colours.
+ * Letters (one Path[] each, floating pieces already joined). With `joined`, each letter slides left
+ * until it overlaps the ones before it; otherwise the font's own spacing is kept.
  */
-export type DimStyle = 'joined' | 'base'
-export const DIM_BASE_THICKNESS = 0.5 // mm
-const DIM_BASE_MARGIN = 1.5 // mm the base shows around the letters
-const DIM_LIP_HEIGHT = 1.5 // mm the locating rim stands above the base
-const DIM_FIT_CLEARANCE = 0.2 // mm per side between a letter and its pocket (FDM press fit)
-const DIM_BASE_RING_THICKNESS = 3 // mm: the loop is thicker than the base so it does not snap
-
-export async function buildDimensional(
-  text: string,
-  fontOpt: FontOption,
-  sizeMm: number,
-  ring: RingOptions = DEFAULT_RING,
-  style: DimStyle = 'joined',
-): Promise<KeychainModel | null> {
+async function layoutLetters(text: string, fontOpt: FontOption, sizeMm: number, joined: boolean): Promise<Path[][]> {
   const clusters = await textClusters(text, fontOpt, sizeMm)
-  if (clusters.length === 0) return null
-
+  const style = joined ? 'joined' : 'base'
   const baseOverlap = 0.025 * sizeMm * sizeMm // mm² each letter should share with the previous ones
   const letters: Path[][] = []
   let placed: Path[] = []
@@ -541,6 +528,30 @@ export async function buildDimensional(
     letters.push(letter)
     placed = union([...placed, ...letter])
   }
+  return letters
+}
+
+/**
+ * 'joined': one piece, letters pushed into each other, no base.
+ * 'base': letters at the font's own spacing on a separate thin base (with the loop) that follows
+ *         their outline; two pieces printed apart and glued together, or printed in two colours.
+ */
+export type DimStyle = 'joined' | 'base'
+export const DIM_BASE_THICKNESS = 0.5 // mm
+const DIM_BASE_MARGIN = 1.5 // mm the base shows around the letters
+const DIM_LIP_HEIGHT = 1.5 // mm the locating rim stands above the base
+const DIM_FIT_CLEARANCE = 0.2 // mm per side between a letter and its pocket (FDM press fit)
+const DIM_BASE_RING_THICKNESS = 3 // mm: the loop is thicker than the base so it does not snap
+
+export async function buildDimensional(
+  text: string,
+  fontOpt: FontOption,
+  sizeMm: number,
+  ring: RingOptions = DEFAULT_RING,
+  style: DimStyle = 'joined',
+): Promise<KeychainModel | null> {
+  const letters = await layoutLetters(text, fontOpt, sizeMm, style === 'joined')
+  if (letters.length === 0) return null
 
   const all = union(letters.flat())
   const b = ClipperLib.Clipper.GetBounds(all)
@@ -754,4 +765,109 @@ export function buildTwoSided(
 /** Front text outline for the two-sided keychain (merged letters, font units already in mm). */
 export async function textOutline(text: string, fontOpt: FontOption, sizeMm: number): Promise<Path[]> {
   return union(await textOutlines(text, fontOpt, sizeMm))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Griptok top: a short name as dimensional letters bent along a rainbow arc, in the locating
+// pocket of a round base that is glued onto a ready-made Ø35 mm phone grip.
+
+export const GRIP_DIAMETER = 35 // mm, the grip it is glued on
+export const GRIP_MAX_DIAMETER = 37 // mm, allowed only when the name would get too small otherwise
+export const GRIP_LEVELS = [4, 3.5, 3] // mm letter heights, cycled
+export const GRIP_MAX_LETTERS = 6
+const GRIP_FLOOR = 1 // mm base floor
+const GRIP_LIP = 1.2 // mm rim above the floor
+const GRIP_WALL = 1.5 // mm from the disc edge to the letters (rim wall + fit clearance)
+const GRIP_MIN_CAP = 7 // mm capital height below which the larger disc is used
+
+/** Spacing (non-mark) characters: Thai vowel/tone marks above or below do not count as letters. */
+export function countLetters(text: string): number {
+  return Array.from(text.replace(/\s/g, '')).filter((ch) => !/[ัิ-ฺ็-๎]/.test(ch)).length
+}
+
+/** Add points so no edge is longer than maxMm (needed before bending straight edges). */
+function densify(paths: Path[], maxMm: number): Path[] {
+  const max = maxMm * S
+  return paths.map((p) => {
+    const out: Path = []
+    p.forEach((a, i) => {
+      const b = p[(i + 1) % p.length]
+      const n = Math.max(1, Math.ceil(Math.hypot(b.X - a.X, b.Y - a.Y) / max))
+      for (let k = 0; k < n; k++) out.push({ X: Math.round(a.X + ((b.X - a.X) * k) / n), Y: Math.round(a.Y + ((b.Y - a.Y) * k) / n) })
+    })
+    return out
+  })
+}
+
+/** Bend a straight line of text (baseline y = 0) over an arc of radius R (mm) whose top is at the origin. */
+function arch(paths: Path[], cxMm: number, R: number): Path[] {
+  return paths.map((p) =>
+    p.map((q) => {
+      const x = q.X / S
+      const y = q.Y / S
+      const t = (x - cxMm) / R
+      const r = R + y
+      return { X: Math.round(Math.sin(t) * r * S), Y: Math.round((Math.cos(t) * r - R) * S) }
+    }),
+  )
+}
+
+function scaleAbout(paths: Path[], k: number, cx: number, cy: number): Path[] {
+  return paths.map((p) => p.map((q) => ({ X: Math.round((q.X / S - cx) * k * S), Y: Math.round((q.Y / S - cy) * k * S) })))
+}
+
+export interface GriptokModel extends KeychainModel {
+  diameter: number
+  /** Capital-letter height after fitting, mm. */
+  capHeight: number
+}
+
+export async function buildGriptok(text: string, fontOpt: FontOption): Promise<GriptokModel | null> {
+  const REF = 20 // lay out at 20 mm (same rules as the keychains), then scale to fit the disc
+  const laid = await layoutLetters(text, fontOpt, REF, true)
+  if (laid.length === 0) return null
+  const lb = boundsMm(union(laid.flat()))
+  const length = lb.maxX - lb.minX
+  // Long names bend over up to ~140°, short ones get a gentle curve instead of a tight hoop.
+  const R = Math.max(length / 2.4, REF * 1.7)
+  const bent = laid.map((l) => union(arch(densify(l, 0.4), (lb.minX + lb.maxX) / 2, R)))
+  // Bending spreads the tops of the letters apart; a letter that no longer touches the ones before
+  // it gets a short stem to them (the stem belongs to that letter, so the word stays one piece).
+  let placed: Path[] = []
+  bent.forEach((l, i) => {
+    if (i > 0 && areaMm2(clip(l, placed, ClipperLib.ClipType.ctIntersection)) < 0.3) {
+      const joined = joinLetterPieces([...placed, ...l], REF)
+      bent[i] = union([...l, ...clip(joined, placed, ClipperLib.ClipType.ctDifference)])
+    }
+    placed = union([...placed, ...bent[i]])
+  })
+
+  // Fit inside the disc: centre on the bent word, scale so its farthest point clears the rim.
+  const all = union(bent.flat())
+  const b = boundsMm(all)
+  const cx = (b.minX + b.maxX) / 2
+  const cy = (b.minY + b.maxY) / 2
+  const reach = Math.max(...all.flat().map((q) => Math.hypot(q.X / S - cx, q.Y / S - cy)))
+  let diameter = GRIP_DIAMETER
+  let k = (diameter / 2 - GRIP_WALL) / reach
+  if (REF * k < GRIP_MIN_CAP) {
+    diameter = GRIP_MAX_DIAMETER
+    k = (diameter / 2 - GRIP_WALL) / reach
+  }
+  const letters = bent.map((l) => scaleAbout(l, k, cx, cy))
+  const word = union(letters.flat())
+
+  const disc = [circle(0, 0, diameter / 2, 160)]
+  let rim = clip(disc, offset(word, DIM_FIT_CLEARANCE), ClipperLib.ClipType.ctDifference)
+  rim = offset(offset(rim, -0.25), 0.25)
+  const floor = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(disc)), { depth: GRIP_FLOOR, bevelEnabled: false })
+  const lip = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(rim)), { depth: GRIP_FLOOR + GRIP_LIP, bevelEnabled: false })
+  const parts = letters.map((l, i) => {
+    const g = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(l)), { depth: GRIP_LEVELS[i % GRIP_LEVELS.length], bevelEnabled: false })
+    g.translate(0, 0, GRIP_FLOOR)
+    return g
+  })
+  const body = parts.length === 1 ? parts[0] : mergeGeometries(parts)!
+  const model = centred(mergeGeometries([floor, lip])!, body, GRIP_FLOOR + Math.max(...GRIP_LEVELS.slice(0, letters.length)))
+  return { ...model, diameter, capHeight: REF * k }
 }

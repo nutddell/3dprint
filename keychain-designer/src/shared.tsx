@@ -39,6 +39,8 @@ const GROUPS = [
   { title: 'สีมาตรฐาน', items: STANDARD },
   { title: 'สีพาสเทล', items: PASTEL },
 ]
+/** Light colours only (white + pastels), e.g. for a base that should stay soft behind the letters. */
+const LIGHT_GROUPS = [{ title: 'สีโทนอ่อน', items: [STANDARD[0], ...PASTEL] }]
 
 export function PreviewCard(props: {
   model: KeychainModel | null
@@ -63,16 +65,17 @@ export function PreviewCard(props: {
   )
 }
 
-export function ColorField(props: { label: string; value: string; onChange: (v: string) => void }) {
+export function ColorField(props: { label: string; value: string; onChange: (v: string) => void; lightOnly?: boolean }) {
   const current = props.value.toLowerCase()
   const named = SWATCHES.find((s) => s.hex === current)
+  const groups = props.lightOnly ? LIGHT_GROUPS : GROUPS
   return (
     <div className="field">
       <div className="row">
         <label>{props.label}</label>
         <span className="value">{named?.name ?? props.value}</span>
       </div>
-      {GROUPS.map((g, gi) => (
+      {groups.map((g, gi) => (
         <div key={g.title} className="swatch-group">
           <div className="swatch-title">{g.title}</div>
           <div className="swatches">
@@ -86,7 +89,7 @@ export function ColorField(props: { label: string; value: string; onChange: (v: 
                 onClick={() => props.onChange(s.hex)}
               />
             ))}
-            {gi === GROUPS.length - 1 && (
+            {gi === groups.length - 1 && !props.lightOnly && (
               <label className={`swatch custom ${named ? '' : 'selected'}`} title="เลือกสีเอง">
                 <input type="color" value={props.value} onChange={(e) => props.onChange(e.target.value)} aria-label="เลือกสีเอง" />
                 <span>+</span>
@@ -109,7 +112,11 @@ export function DownloadField(props: {
   onError: (msg: string) => void
   /** One-colour model: offer a single combined file only. */
   single?: boolean
+  plateLabel?: string
+  /** How-to under the buttons; defaults to the two-colour slicer tip. */
+  note?: string
 }) {
+  const plateLabel = props.plateLabel ?? 'ฐาน'
   const off = !props.model || props.disabled
   const save = (part: StlPart) => {
     if (!props.model) return
@@ -133,7 +140,7 @@ export function DownloadField(props: {
       <div className="download-grid">
         <button className="dl-btn" disabled={off} onClick={() => save('plate')}>
           <span className="dl-dot" style={{ background: props.plateColor }} />
-          ฐาน
+          {plateLabel}
         </button>
         <button className="dl-btn" disabled={off} onClick={() => save('text')}>
           <span className="dl-dot" style={{ background: props.topColor }} />
@@ -144,8 +151,8 @@ export function DownloadField(props: {
         </button>
       </div>
       <div className="sub">
-        พิมพ์ 2 สี: โหลดไฟล์ฐานกับ{props.topLabel} แล้วลากทั้ง 2 ไฟล์เข้า Creality Print พร้อมกัน
-        เมื่อถามว่าจะโหลดเป็นวัตถุเดียวหลายชิ้นส่วนไหม ให้ตอบ "ใช่" แล้วเลือก filament ให้แต่ละชิ้น
+        {props.note ??
+          `พิมพ์ 2 สี: โหลดไฟล์${plateLabel}กับ${props.topLabel} แล้วลากทั้ง 2 ไฟล์เข้า Creality Print พร้อมกัน เมื่อถามว่าจะโหลดเป็นวัตถุเดียวหลายชิ้นส่วนไหม ให้ตอบ "ใช่" แล้วเลือก filament ให้แต่ละชิ้น`}
       </div>
       </>
       )}

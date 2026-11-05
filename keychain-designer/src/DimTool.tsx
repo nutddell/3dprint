@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FONTS, type FontOption } from './fonts'
-import { buildDimensional, DEFAULT_RING, DIM_LEVELS, type KeychainModel, type RingOptions } from './geometry'
+import { buildDimensional, DEFAULT_RING, DIM_BASE_THICKNESS, DIM_LEVELS, type DimStyle, type KeychainModel, type RingOptions } from './geometry'
 import { ColorField, DownloadField, PreviewCard, RingField } from './shared'
 import { FontGroup } from './TextTool'
 
@@ -12,6 +12,8 @@ export default function DimTool({ dark }: { dark: boolean }) {
   const [size, setSize] = useState(25)
   const [font, setFont] = useState<FontOption>(FONTS.find((f) => f.id === 'poppins')!)
   const [color, setColor] = useState('#d9c9ef')
+  const [style, setStyle] = useState<DimStyle>('joined')
+  const [baseColor, setBaseColor] = useState('#ffffff')
   const [ring, setRing] = useState<RingOptions>(DEFAULT_RING)
   const [model, setModel] = useState<KeychainModel | null>(null)
   const [busy, setBusy] = useState(false)
@@ -28,7 +30,7 @@ export default function DimTool({ dark }: { dark: boolean }) {
       }
       setBusy(true)
       try {
-        const m = await buildDimensional(text, font, size, ring)
+        const m = await buildDimensional(text, font, size, ring, style)
         if (id !== buildId.current) return
         setModel(m)
         setError(m ? '' : 'ฟอนต์นี้ไม่มีตัวอักษรที่พิมพ์ ลองเปลี่ยนฟอนต์')
@@ -39,11 +41,18 @@ export default function DimTool({ dark }: { dark: boolean }) {
       }
     }, 150)
     return () => clearTimeout(t)
-  }, [text, font, size, ring])
+  }, [text, font, size, ring, style])
 
   return (
     <main className="workspace">
-      <PreviewCard model={model} busy={busy} topColor={color} plateColor={color} dark={dark} emptyText="พิมพ์ข้อความเพื่อดูตัวอย่าง" />
+      <PreviewCard
+        model={model}
+        busy={busy}
+        topColor={color}
+        plateColor={style === 'base' ? baseColor : color}
+        dark={dark}
+        emptyText="พิมพ์ข้อความเพื่อดูตัวอย่าง"
+      />
 
       <section className="panel card">
         <div className="field">
@@ -57,17 +66,33 @@ export default function DimTool({ dark }: { dark: boolean }) {
             onChange={(e) => setText(e.target.value)}
           />
           <div className="sub">
-            {Array.from(text).length}/{MAX_CHARS} ตัวอักษร · ทั้งชิ้นเป็นสีเดียว
+            {Array.from(text).length}/{MAX_CHARS} ตัวอักษร
           </div>
           {error && <div className="error">{error}</div>}
+        </div>
+
+        <div className="field">
+          <label>รูปแบบ</label>
+          <div className="segmented" role="group" aria-label="รูปแบบ">
+            <button className={style === 'joined' ? 'selected' : ''} aria-pressed={style === 'joined'} onClick={() => setStyle('joined')}>
+              ตัวอักษรติดกัน (1 ชิ้น)
+            </button>
+            <button className={style === 'base' ? 'selected' : ''} aria-pressed={style === 'base'} onClick={() => setStyle('base')}>
+              มีฐานประกอบ (2 ชิ้น)
+            </button>
+          </div>
+          <div className="sub">
+            {style === 'joined'
+              ? 'ตัวอักษรชิดซ้อนกันเองเป็นชิ้นเดียว ไม่มีฐาน'
+              : `ฐานบาง ${DIM_BASE_THICKNESS} mm ตามรูปตัวอักษรพร้อมห่วง แยกพิมพ์กับตัวอักษรแล้วนำมาประกอบ`}
+          </div>
         </div>
 
         <Slider id="dim-size" label="ขนาดความสูงตัวอักษร" unit="mm" min={15} max={50} value={size} onChange={setSize} note="วัดจากความสูงตัวพิมพ์ใหญ่ (H)" />
         <div className="field">
           <label>ความหนา</label>
           <div className="sub">
-            ตัวอักษรสูงไล่ระดับ {DIM_LEVELS.join(' / ')} mm สลับกันทีละตัว และชิดซ้อนกันเองโดยไม่มีฐาน
-            ทางร้านตั้งค่าไว้ให้พิมพ์ได้แข็งแรง
+            ตัวอักษรสูงไล่ระดับ {DIM_LEVELS.join(' / ')} mm สลับกันทีละตัว ทางร้านตั้งค่าไว้ให้พิมพ์ได้แข็งแรง
           </div>
         </div>
 
@@ -79,7 +104,8 @@ export default function DimTool({ dark }: { dark: boolean }) {
         </div>
 
         <RingField value={ring} onChange={setRing} />
-        <ColorField label="สีชิ้นงาน" value={color} onChange={setColor} />
+        <ColorField label={style === 'base' ? 'สีตัวอักษร' : 'สีชิ้นงาน'} value={color} onChange={setColor} />
+        {style === 'base' && <ColorField label="สีฐาน (โทนอ่อน)" value={baseColor} onChange={setBaseColor} lightOnly />}
 
         <DownloadField
           model={model}
@@ -87,9 +113,11 @@ export default function DimTool({ dark }: { dark: boolean }) {
           name={text}
           topLabel="ตัวอักษร"
           topColor={color}
-          plateColor={color}
+          plateColor={style === 'base' ? baseColor : color}
           onError={setError}
-          single
+          single={style === 'joined'}
+          plateLabel="ฐาน + ห่วง"
+          note="แยกพิมพ์: โหลดไฟล์ฐานกับตัวอักษร พิมพ์แยกกันแล้วนำตัวอักษรมาติดบนฐาน (slicer จะวางแต่ละไฟล์ลงบนแผ่นพิมพ์ให้เอง) · ถ้าเครื่องพิมพ์หลายสีได้ ลากทั้ง 2 ไฟล์เข้า Creality Print พร้อมกันแล้วตอบ “ใช่” เมื่อถามว่าจะโหลดเป็นวัตถุเดียว"
         />
       </section>
     </main>

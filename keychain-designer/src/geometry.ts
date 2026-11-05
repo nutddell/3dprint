@@ -236,31 +236,46 @@ function plateOutline(raised: Path[], ring: RingOptions, anchor: number, style: 
   const hole = ring.holeDiameter / 2
   const outer = hole + RING_WALL
   const reach = hole + RING_GAP // ring centre distance beyond the plate edge
-  let cx: number
-  let cy: number
-  let bridge: Path
-  // The bridge joins the loop to the plate and runs a little way into the design so it always connects.
+  let cx = 0
+  let cy = 0
+  // The bridge joins the loop to the design. It starts a little way in and keeps reaching further
+  // until it really overlaps the design: under a word with descenders (j, y, Thai tails) the
+  // middle of the bottom edge can be far from the nearest letter.
+  const bridgeTo = (depth: number): Path => {
+    switch (ring.side) {
+      case 'left':
+        return rect(cx, cy - outer, r.minX + depth, cy + outer)
+      case 'right':
+        return rect(r.maxX - depth, cy - outer, cx, cy + outer)
+      case 'top':
+        return rect(cx - outer, r.maxY - depth, cx + outer, cy)
+      case 'bottom':
+        return rect(cx - outer, cy, cx + outer, r.minY + depth)
+    }
+  }
   switch (ring.side) {
     case 'left':
       cx = p.minX - reach
       cy = anchor
-      bridge = rect(cx, cy - outer, r.minX + outer, cy + outer)
       break
     case 'right':
       cx = p.maxX + reach
       cy = anchor
-      bridge = rect(r.maxX - outer, cy - outer, cx, cy + outer)
       break
     case 'top':
       cx = anchor
       cy = p.maxY + reach
-      bridge = rect(cx - outer, r.maxY - outer, cx + outer, cy)
       break
     case 'bottom':
       cx = anchor
       cy = p.minY - reach
-      bridge = rect(cx - outer, cy, cx + outer, r.minY + outer)
       break
+  }
+  const span = ring.side === 'left' || ring.side === 'right' ? r.maxX - r.minX : r.maxY - r.minY
+  let bridge = bridgeTo(outer)
+  for (let depth = outer + 0.5; depth <= span; depth += 0.5) {
+    if (areaMm2(clip([bridge], raised, ClipperLib.ClipType.ctIntersection)) >= outer * 1.5) break
+    bridge = bridgeTo(depth)
   }
 
   const c = new ClipperLib.Clipper()
@@ -276,7 +291,9 @@ function treeFromPaths(paths: Path[]): ClipperLib.PolyTree {
   const c = new ClipperLib.Clipper()
   // No outlines that touch themselves at a point: the triangulator would leave a gap in the mesh there.
   c.StrictlySimple = true
-  c.AddPaths(paths, ClipperLib.PolyType.ptSubject, true)
+  // A microscopic closing merges edges that run exactly along each other (a stem lined up with an
+  // outline edge), which would otherwise become T-junctions in the mesh. 2 µm is invisible in print.
+  c.AddPaths(offset(offset(paths, 0.002), -0.002), ClipperLib.PolyType.ptSubject, true)
   const tree = new ClipperLib.PolyTree()
   c.Execute(ClipperLib.ClipType.ctUnion, tree, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero)
   return tree
@@ -446,11 +463,22 @@ function joinLetterPieces(letter: Path[], sizeMm: number): Path[] {
  * Dimensional letters: one colour, no base plate. Each letter is pushed against the one before it
  * so they always overlap, and letter heights step through DIM_LEVELS so the letters stay readable.
  */
+/**
+ * 'joined': one piece, letters pushed into each other, no base.
+ * 'base': letters at the font's own spacing on a separate thin base (with the loop) that follows
+ *         their outline; two pieces printed apart and glued together, or printed in two colours.
+ */
+export type DimStyle = 'joined' | 'base'
+export const DIM_BASE_THICKNESS = 0.5 // mm
+const DIM_BASE_MARGIN = 1.2 // mm the base shows around the letters
+const DIM_BASE_RING_THICKNESS = 3 // mm: the loop is thicker than the base so it does not snap
+
 export async function buildDimensional(
   text: string,
   fontOpt: FontOption,
   sizeMm: number,
   ring: RingOptions = DEFAULT_RING,
+  style: DimStyle = 'joined',
 ): Promise<KeychainModel | null> {
   const clusters = await textClusters(text, fontOpt, sizeMm)
   if (clusters.length === 0) return null
@@ -461,7 +489,7 @@ export async function buildDimensional(
   let carry = 0 // mm every following letter is moved by
   for (const raw of clusters) {
     let letter = joinLetterPieces(shift(raw, carry), sizeMm)
-    if (letters.length > 0) {
+    if (style === 'joined' && letters.length > 0) {
       // Thin letters (เ, ไ, i, punctuation) cannot share much area: cap the overlap at 12% of the
       // smaller of the two neighbours so neither one gets swallowed and the word stays readable.
       const prev = letters[letters.length - 1]
@@ -508,17 +536,38 @@ export async function buildDimensional(
   const all = union(letters.flat())
   const b = ClipperLib.Clipper.GetBounds(all)
   const anchor = ring.side === 'left' || ring.side === 'right' ? sizeMm / 2 : (b.left + b.right) / 2 / S
-  // Loop + bridge only (no plate); the bridge reaches into the first/last letter to hold on.
-  const loopTree = plateOutline(all, ring, anchor, { grow: 0, close: 0, fillHoles: false, ringOnly: true })
-  const loop = new THREE.ExtrudeGeometry(treeToShapes(loopTree), { depth: DIM_RING_THICKNESS, bevelEnabled: false })
-
-  const parts = letters.map(
-    (l, i) =>
-      new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(l)), {
+  const extrudeLetters = (lift: number) => {
+    const parts = letters.map((l, i) => {
+      const g = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(l)), {
         depth: DIM_LEVELS[i % DIM_LEVELS.length],
         bevelEnabled: false,
-      }),
-  )
-  const body = parts.length === 1 ? parts[0] : mergeGeometries(parts)!
-  return centred(loop, body, Math.max(...DIM_LEVELS.slice(0, letters.length)))
+      })
+      if (lift) g.translate(0, 0, lift)
+      return g
+    })
+    return parts.length === 1 ? parts[0] : mergeGeometries(parts)!
+  }
+  const tallest = Math.max(...DIM_LEVELS.slice(0, letters.length))
+
+  if (style === 'joined') {
+    // Loop + bridge only (no plate); the bridge reaches into the first/last letter to hold on.
+    const loopTree = plateOutline(all, ring, anchor, { grow: 0, close: 0, fillHoles: false, ringOnly: true })
+    const loop = new THREE.ExtrudeGeometry(treeToShapes(loopTree), { depth: DIM_RING_THICKNESS, bevelEnabled: false })
+    return centred(loop, extrudeLetters(0), tallest)
+  }
+
+  // Base: letters with gaps closed, grown by a small margin, counters filled, any leftover islands
+  // (wide spaces) tied together, so it is one flat piece that follows the word.
+  const close = Math.max(2, sizeMm * 0.22)
+  let base = offset(offset(offset(all, close), -close), DIM_BASE_MARGIN)
+  base = joinLetterPieces(base.filter((p) => ClipperLib.Clipper.Orientation(p)), sizeMm)
+  const plate = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(base)), { depth: DIM_BASE_THICKNESS, bevelEnabled: false })
+  // The thicker loop must stay clear of the letters' footprint so they still sit flat on the base.
+  const loopTree = plateOutline(base, ring, anchor, { grow: 0, close: 0, fillHoles: true, ringOnly: true })
+  const loopPaths = clip(ClipperLib.Clipper.PolyTreeToPaths(loopTree), offset(all, 0.4), ClipperLib.ClipType.ctDifference)
+  const loop = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(loopPaths)), {
+    depth: DIM_BASE_RING_THICKNESS,
+    bevelEnabled: false,
+  })
+  return centred(mergeGeometries([plate, loop])!, extrudeLetters(DIM_BASE_THICKNESS), DIM_BASE_THICKNESS + tallest)
 }

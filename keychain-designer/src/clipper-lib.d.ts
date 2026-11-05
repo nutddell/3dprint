@@ -29,6 +29,7 @@ declare module 'clipper-lib' {
       static Orientation(path: Path): boolean
       static Area(path: Path): number
       static CleanPolygon(path: Path, distance?: number): Path
+      static PolyTreeToPaths(tree: PolyTree): Paths
       static GetBounds(paths: Paths): { left: number; top: number; right: number; bottom: number }
     }
     class ClipperOffset {

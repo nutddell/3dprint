@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Preview from './Preview'
 import { FONTS, fontFamily, type FontOption } from './fonts'
 import { buildKeychain, type KeychainModel } from './geometry'
+import { downloadStl, type StlPart } from './exportStl'
 
 const LOGO_URL = 'https://lh3.googleusercontent.com/d/1TCIgIjY4dLXY08wZIjGq2cNA7bv19rIx=h300'
 
@@ -85,6 +86,15 @@ export default function App() {
     }, 150)
     return () => clearTimeout(t)
   }, [text, font, size])
+
+  const save = (part: StlPart) => {
+    if (!model) return
+    try {
+      downloadStl(model, part, text)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'สร้างไฟล์ STL ไม่สำเร็จ')
+    }
+  }
 
   const thaiFonts = FONTS.filter((f) => f.script === 'thai')
   const latinFonts = FONTS.filter((f) => f.script === 'latin')
@@ -174,6 +184,27 @@ export default function App() {
 
           <ColorField label="สีตัวอักษร" value={textColor} onChange={setTextColor} />
           <ColorField label="สีพื้นหลัง" value={plateColor} onChange={setPlateColor} />
+
+          <div className="field download">
+            <label>ดาวน์โหลดไฟล์ STL</label>
+            <div className="download-grid">
+              <button className="dl-btn" disabled={!model || busy} onClick={() => save('plate')}>
+                <span className="dl-dot" style={{ background: plateColor }} />
+                ฐาน
+              </button>
+              <button className="dl-btn" disabled={!model || busy} onClick={() => save('text')}>
+                <span className="dl-dot" style={{ background: textColor }} />
+                ตัวอักษร
+              </button>
+              <button className="dl-btn primary" disabled={!model || busy} onClick={() => save('all')}>
+                รวมชิ้นเดียว (สีเดียว)
+              </button>
+            </div>
+            <div className="sub">
+              พิมพ์ 2 สี: โหลดไฟล์ฐานกับตัวอักษร แล้วลากทั้ง 2 ไฟล์เข้า Creality Print พร้อมกัน
+              เมื่อถามว่าจะโหลดเป็นวัตถุเดียวหลายชิ้นส่วนไหม ให้ตอบ "ใช่" แล้วเลือก filament ให้แต่ละชิ้น
+            </div>
+          </div>
         </section>
       </main>
     </div>

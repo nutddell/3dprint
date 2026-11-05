@@ -218,3 +218,21 @@ input[type='range'] { width: 100%; accent-color: var(--brand-500); height: 24px;
   .panel { padding: 16px; }
   .dims { font-size: 12px; }
 }
+
+/* ---- Download ---- */
+.download { border-top: 1px solid var(--border); padding-top: 18px; }
+.download-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dl-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--field);
+  font-weight: 700;
+  cursor: pointer;
+}
+.dl-btn:hover:not(:disabled) { border-color: var(--brand-500); }
+.dl-btn.primary { grid-column: 1 / -1; background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.dl-btn.primary:hover:not(:disabled) { background: var(--brand-700); border-color: var(--brand-700); }
+.dl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.dl-dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.2); }

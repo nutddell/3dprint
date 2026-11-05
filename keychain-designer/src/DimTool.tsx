@@ -84,7 +84,7 @@ export default function DimTool({ dark }: { dark: boolean }) {
           <div className="sub">
             {style === 'joined'
               ? 'ตัวอักษรชิดซ้อนกันเองเป็นชิ้นเดียว ไม่มีฐาน'
-              : `ฐานบาง ${DIM_BASE_THICKNESS} mm ตามรูปตัวอักษรพร้อมห่วง แยกพิมพ์กับตัวอักษรแล้วนำมาประกอบ`}
+              : `ฐานบาง ${DIM_BASE_THICKNESS} mm พร้อมห่วง มีขอบเป็นร่องตามรูปตัวอักษร แยกพิมพ์แล้ววางตัวอักษรลงร่องได้พอดี`}
           </div>
         </div>
 

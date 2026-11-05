@@ -470,7 +470,9 @@ function joinLetterPieces(letter: Path[], sizeMm: number): Path[] {
  */
 export type DimStyle = 'joined' | 'base'
 export const DIM_BASE_THICKNESS = 0.5 // mm
-const DIM_BASE_MARGIN = 1.2 // mm the base shows around the letters
+const DIM_BASE_MARGIN = 1.5 // mm the base shows around the letters
+const DIM_LIP_HEIGHT = 1.5 // mm the locating rim stands above the base
+const DIM_FIT_CLEARANCE = 0.2 // mm per side between a letter and its pocket (FDM press fit)
 const DIM_BASE_RING_THICKNESS = 3 // mm: the loop is thicker than the base so it does not snap
 
 export async function buildDimensional(
@@ -562,6 +564,15 @@ export async function buildDimensional(
   let base = offset(offset(offset(all, close), -close), DIM_BASE_MARGIN)
   base = joinLetterPieces(base.filter((p) => ClipperLib.Clipper.Orientation(p)), sizeMm)
   const plate = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(base)), { depth: DIM_BASE_THICKNESS, bevelEnabled: false })
+  // Locating rim: everything on the base except a pocket shaped like the letters (plus clearance),
+  // so the letters drop in straight and stay put. Slivers too thin to print are removed.
+  const pocket = offset(all, DIM_FIT_CLEARANCE)
+  let rim = clip(base, pocket, ClipperLib.ClipType.ctDifference)
+  rim = offset(offset(rim, -0.25), 0.25)
+  const lip = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(rim)), {
+    depth: DIM_BASE_THICKNESS + DIM_LIP_HEIGHT, // from the bed up, so it fuses with the plate
+    bevelEnabled: false,
+  })
   // The thicker loop must stay clear of the letters' footprint so they still sit flat on the base.
   const loopTree = plateOutline(base, ring, anchor, { grow: 0, close: 0, fillHoles: true, ringOnly: true })
   const loopPaths = clip(ClipperLib.Clipper.PolyTreeToPaths(loopTree), offset(all, 0.4), ClipperLib.ClipType.ctDifference)
@@ -569,5 +580,5 @@ export async function buildDimensional(
     depth: DIM_BASE_RING_THICKNESS,
     bevelEnabled: false,
   })
-  return centred(mergeGeometries([plate, loop])!, extrudeLetters(DIM_BASE_THICKNESS), DIM_BASE_THICKNESS + tallest)
+  return centred(mergeGeometries([plate, lip, loop])!, extrudeLetters(DIM_BASE_THICKNESS), DIM_BASE_THICKNESS + tallest)
 }

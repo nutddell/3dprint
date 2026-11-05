@@ -326,3 +326,15 @@ input[type='range'] { width: 100%; accent-color: var(--brand-500); height: 24px;
 }
 .explode-btn:hover { border-color: var(--brand-500); }
 .explode-btn.on { background: var(--brand-100); border-color: var(--brand-500); }
+
+/* ---- Two-sided keychain ---- */
+.side-title {
+  align-self: flex-start;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #8b5cf6, #5b21d6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.download-grid .dl-btn { min-width: 0; }

@@ -326,6 +326,13 @@ export interface KeychainModel {
   width: number
   length: number
   height: number
+  /** Two-sided keychains: the back half, assembled under the front (for the preview) and as printed. */
+  back?: {
+    plate: THREE.BufferGeometry
+    text: THREE.BufferGeometry
+    printPlate: THREE.BufferGeometry
+    printText: THREE.BufferGeometry
+  }
 }
 
 export async function buildKeychain(
@@ -581,4 +588,170 @@ export async function buildDimensional(
     bevelEnabled: false,
   })
   return centred(mergeGeometries([plate, lip, loop])!, extrudeLetters(DIM_BASE_THICKNESS), DIM_BASE_THICKNESS + tallest)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Two-sided keychain: name on the front, logo on the back. Two halves with the same outline are
+// printed flat side down (base colour, then a filament change for the raised design) and glued
+// back to back, lined up by two pins cut from 1.75 mm filament.
+
+export type BaseShape = 'fit' | 'rounded' | 'circle' | 'oval'
+
+export const TWO_HALF_THICKNESS = 2 // mm per base half
+export const TWO_RAISED = 1.5 // mm the design stands on each face
+const TWO_MARGIN = 3 // mm between the designs and the edge
+export const TWO_PIN_DIAMETER = 2 // mm hole for a 1.75 mm filament pin
+export const TWO_PIN_DEPTH = 1.2 // mm into each half
+
+function mirrorX(paths: Path[]): Path[] {
+  // Mirroring flips the winding, so reverse each path to keep outers/holes the same way round.
+  return paths.map((p) => p.map((q) => ({ X: -q.X, Y: q.Y })).reverse())
+}
+
+function centreOn(paths: Path[], cx: number, cy: number): Path[] {
+  const dx = Math.round(cx * S)
+  const dy = Math.round(cy * S)
+  return paths.map((p) => p.map((q) => ({ X: q.X - dx, Y: q.Y - dy })))
+}
+
+function boundsMm(paths: Path[]) {
+  const b = ClipperLib.Clipper.GetBounds(paths)
+  return { minX: b.left / S, maxX: b.right / S, minY: b.top / S, maxY: b.bottom / S }
+}
+
+function ellipse(cx: number, cy: number, a: number, b: number, n = 120): Path {
+  return Array.from({ length: n }, (_, i) => {
+    const t = (i / n) * Math.PI * 2
+    return { X: Math.round((cx + Math.cos(t) * a) * S), Y: Math.round((cy + Math.sin(t) * b) * S) }
+  })
+}
+
+/** One outline that covers both faces' designs (front coordinates). */
+function twoSidedOutline(design: Path[], shape: BaseShape, sizeMm: number): Path[] {
+  const b = boundsMm(design)
+  const cx = (b.minX + b.maxX) / 2
+  const cy = (b.minY + b.maxY) / 2
+  const hw = (b.maxX - b.minX) / 2
+  const hh = (b.maxY - b.minY) / 2
+  const pts = design.flat().map((q) => [q.X / S, q.Y / S])
+  switch (shape) {
+    case 'fit': {
+      const close = Math.max(2, sizeMm * 0.22)
+      const grown = offset(offset(offset(design, close), -close), TWO_MARGIN)
+      return joinLetterPieces(grown.filter((p) => ClipperLib.Clipper.Orientation(p)), sizeMm)
+    }
+    case 'rounded': {
+      const r = Math.min(6, hh + TWO_MARGIN)
+      const inner = rect(b.minX - TWO_MARGIN + r, b.minY - TWO_MARGIN + r, b.maxX + TWO_MARGIN - r, b.maxY + TWO_MARGIN - r)
+      return offset([inner], r)
+    }
+    case 'circle': {
+      const r = Math.max(...pts.map(([x, y]) => Math.hypot(x - cx, y - cy)))
+      return [circle(cx, cy, r + TWO_MARGIN, 120)]
+    }
+    case 'oval': {
+      // Smallest ellipse with the design's proportions that still contains every point.
+      const k = Math.max(1, ...pts.map(([x, y]) => Math.hypot((x - cx) / Math.max(hw, 1e-6), (y - cy) / Math.max(hh, 1e-6))))
+      return [ellipse(cx, cy, hw * k + TWO_MARGIN, hh * k + TWO_MARGIN)]
+    }
+  }
+}
+
+/** Two pin spots on the horizontal centre line, well inside the outline (away from the edge and the loop). */
+function pinSpots(outline: Path[]): [number, number][] {
+  const inner = offset(outline, -(TWO_PIN_DIAMETER / 2 + 2))
+  if (inner.length === 0) return []
+  const b = boundsMm(inner)
+  const y = (b.minY + b.maxY) / 2
+  const inside = (x: number) => inner.some((p) => ClipperLib.Clipper.PointInPolygon({ X: Math.round(x * S), Y: Math.round(y * S) }, p) === 1)
+  let left: number | null = null
+  let right: number | null = null
+  for (let x = b.minX; x <= b.maxX; x += 0.25) if (inside(x)) { left = x; break }
+  for (let x = b.maxX; x >= b.minX; x -= 0.25) if (inside(x)) { right = x; break }
+  if (left === null || right === null) return []
+  if (right - left < TWO_PIN_DIAMETER * 3) return [[(left + right) / 2, y]]
+  // Pull the pins in a little from the extremes so they sit in solid plastic.
+  const inset = Math.min(3, (right - left) / 6)
+  return [
+    [left + inset, y],
+    [right - inset, y],
+  ]
+}
+
+/** One half as printed: plate (with blind pin holes from the bed side) and the raised design on top. */
+function half(outline: Path[], design: Path[], pins: [number, number][]) {
+  const holes = pins.map(([x, y]) => circle(x, y, TWO_PIN_DIAMETER / 2, 32))
+  const lower = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(holes.length ? clip(outline, holes, ClipperLib.ClipType.ctDifference) : outline)), {
+    depth: TWO_PIN_DEPTH + 0.3,
+    bevelEnabled: false,
+  })
+  // Upper layer overlaps the lower one so the two fuse; it closes the holes at TWO_PIN_DEPTH.
+  const upper = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(outline)), {
+    depth: TWO_HALF_THICKNESS - TWO_PIN_DEPTH,
+    bevelEnabled: false,
+  })
+  upper.translate(0, 0, TWO_PIN_DEPTH)
+  const top = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(design)), { depth: TWO_RAISED, bevelEnabled: false })
+  top.translate(0, 0, TWO_HALF_THICKNESS)
+  return { plate: mergeGeometries([lower, upper])!, top }
+}
+
+/**
+ * `front`: raised outline for the front (text), `back`: raised outline for the back (logo) as it
+ * reads on the back face. Both are centred on each other.
+ */
+export function buildTwoSided(
+  front: Path[],
+  back: Path[],
+  shape: BaseShape,
+  sizeMm: number,
+  ring: RingOptions = DEFAULT_RING,
+): KeychainModel | null {
+  if (front.length === 0 && back.length === 0) return null
+  const centre = (p: Path[]) => {
+    if (p.length === 0) return p
+    const b = boundsMm(p)
+    return centreOn(p, (b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2)
+  }
+  const f = centre(front)
+  const bk = centre(back)
+  // Seen from the front, the back design is mirrored.
+  const backSeenFromFront = mirrorX(bk)
+  const both = union([...f, ...backSeenFromFront])
+  const base = twoSidedOutline(both, shape, sizeMm)
+  const bb = boundsMm(base)
+  const anchor = ring.side === 'left' || ring.side === 'right' ? (bb.minY + bb.maxY) / 2 : (bb.minX + bb.maxX) / 2
+  const outline = ClipperLib.Clipper.PolyTreeToPaths(plateOutline(base, ring, anchor, { grow: 0, close: 0, fillHoles: true }))
+  const pins = pinSpots(base)
+
+  const frontHalf = half(outline, f, pins)
+  // The back half is printed face up too, so it is the mirror image of the outline with the logo reading normally.
+  const backHalf = half(mirrorX(outline), bk, pins.map(([x, y]) => [-x, y] as [number, number]))
+
+  // Assembled: the back half turned over (rotate about Y) under the front half.
+  const turn = new THREE.Matrix4().makeRotationY(Math.PI)
+  const backPlate = backHalf.plate.clone().applyMatrix4(turn)
+  const backTop = backHalf.top.clone().applyMatrix4(turn)
+
+  frontHalf.plate.computeBoundingBox()
+  const box = frontHalf.plate.boundingBox!
+  const cx = (box.min.x + box.max.x) / 2
+  const cy = (box.min.y + box.max.y) / 2
+  for (const g of [frontHalf.plate, frontHalf.top, backPlate, backTop]) g.translate(-cx, -cy, 0)
+  // Printed back half is mirrored in x, so its centring shift is mirrored too.
+  for (const g of [backHalf.plate, backHalf.top]) g.translate(cx, -cy, 0)
+
+  return {
+    plate: frontHalf.plate,
+    text: frontHalf.top,
+    width: box.max.x - box.min.x,
+    length: box.max.y - box.min.y,
+    height: 2 * (TWO_HALF_THICKNESS + TWO_RAISED),
+    back: { plate: backPlate, text: backTop, printPlate: backHalf.plate, printText: backHalf.top },
+  }
+}
+
+/** Front text outline for the two-sided keychain (merged letters, font units already in mm). */
+export async function textOutline(text: string, fontOpt: FontOption, sizeMm: number): Promise<Path[]> {
+  return union(await textOutlines(text, fontOpt, sizeMm))
 }

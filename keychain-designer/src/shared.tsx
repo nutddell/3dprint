@@ -51,6 +51,9 @@ export function PreviewCard(props: {
   emptyText: string
   /** Optional "exploded view" switch: lifts the top part so the base underneath is visible. */
   explode?: { on: boolean; onToggle: () => void }
+  /** Two-sided keychains: back design colour and a switch to turn the model over. */
+  backColor?: string
+  flip?: { on: boolean; onToggle: () => void }
 }) {
   const { model } = props
   return (
@@ -66,8 +69,15 @@ export function PreviewCard(props: {
           {props.explode.on ? '⬇ ประกอบชิ้นงาน' : '⬆ ดูแยกชิ้น'}
         </button>
       )}
+      {props.flip && model && (
+        <button className={`explode-btn ${props.flip.on ? 'on' : ''}`} onClick={props.flip.onToggle} aria-pressed={props.flip.on}>
+          {props.flip.on ? '↻ ดูด้านหน้า' : '↻ ดูด้านหลัง'}
+        </button>
+      )}
       <Preview
         model={model}
+        backColor={props.backColor}
+        flip={props.flip?.on}
         textColor={props.topColor}
         plateColor={props.plateColor}
         dark={props.dark}

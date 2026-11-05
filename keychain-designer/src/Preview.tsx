@@ -10,6 +10,10 @@ interface Props {
   dark: boolean
   /** mm to lift the top part off the base ("exploded" view), animated. */
   lift?: number
+  /** Colour of the back face's design on two-sided keychains. */
+  backColor?: string
+  /** Turn the keychain over to show its back, animated. */
+  flip?: boolean
 }
 
 interface Scene3D {
@@ -18,6 +22,12 @@ interface Scene3D {
   controls: OrbitControls
   scene: THREE.Scene
   group: THREE.Group
+  /** Raises two-sided models so they rest on the grid. */
+  stand: THREE.Group
+  /** Turns the model over about its long axis. */
+  pivot: THREE.Group
+  flipTarget: number
+  backMat: THREE.MeshStandardMaterial
   plateMat: THREE.MeshStandardMaterial
   textMat: THREE.MeshStandardMaterial
   grid: THREE.GridHelper
@@ -44,7 +54,7 @@ function frame(s: Scene3D) {
   s.controls.target.set(0, 0, 0)
 }
 
-export default function Preview({ model, textColor, plateColor, dark, lift = 0 }: Props) {
+export default function Preview({ model, textColor, plateColor, dark, lift = 0, backColor, flip = false }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<Scene3D | null>(null)
 
@@ -74,9 +84,14 @@ export default function Preview({ model, textColor, plateColor, dark, lift = 0 }
     const group = new THREE.Group()
     group.rotation.x = -Math.PI / 2
     scene.add(group)
+    const stand = new THREE.Group()
+    const pivot = new THREE.Group()
+    group.add(stand)
+    stand.add(pivot)
 
     const plateMat = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 })
     const textMat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.05 })
+    const backMat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.05 })
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
@@ -84,7 +99,7 @@ export default function Preview({ model, textColor, plateColor, dark, lift = 0 }
     controls.maxDistance = 800
 
     const render = () => renderer.render(scene, camera)
-    const s: Scene3D = { renderer, camera, controls, scene, group, plateMat, textMat, grid, fitWidth: 0, needsFit: false, host, textMesh: null, liftTarget: 0, render }
+    const s: Scene3D = { renderer, camera, controls, scene, group, stand, pivot, flipTarget: 0, backMat, plateMat, textMat, grid, fitWidth: 0, needsFit: false, host, textMesh: null, liftTarget: 0, render }
     sceneRef.current = s
 
     const resize = () => {
@@ -105,6 +120,8 @@ export default function Preview({ model, textColor, plateColor, dark, lift = 0 }
       if (host.clientWidth > 0) {
         const m = s.textMesh
         if (m && Math.abs(m.position.z - s.liftTarget) > 0.01) m.position.z += (s.liftTarget - m.position.z) * 0.18
+        const turn = s.flipTarget - s.pivot.rotation.y
+        if (Math.abs(turn) > 0.001) s.pivot.rotation.y += turn * 0.15
         controls.update()
         render()
       }
@@ -126,15 +143,18 @@ export default function Preview({ model, textColor, plateColor, dark, lift = 0 }
   useEffect(() => {
     const s = sceneRef.current
     if (!s) return
-    for (const child of [...s.group.children]) {
-      s.group.remove(child)
+    for (const child of [...s.pivot.children]) {
+      s.pivot.remove(child)
       ;(child as THREE.Mesh).geometry.dispose()
     }
     s.textMesh = null
     if (!model) return
     s.textMesh = new THREE.Mesh(model.text, s.textMat)
     s.textMesh.position.z = s.liftTarget
-    s.group.add(new THREE.Mesh(model.plate, s.plateMat), s.textMesh)
+    s.pivot.add(new THREE.Mesh(model.plate, s.plateMat), s.textMesh)
+    if (model.back) s.pivot.add(new THREE.Mesh(model.back.plate, s.plateMat), new THREE.Mesh(model.back.text, s.backMat))
+    // Two-sided models are built around z = 0 (front up, back down): stand them on the grid.
+    s.stand.position.z = model.back ? model.height / 2 : 0
 
     const span = Math.max(model.width, model.length * 1.6)
     if (s.fitWidth === 0 || s.needsFit || span > s.fitWidth * 1.15 || span < s.fitWidth * 0.6) {
@@ -146,6 +166,14 @@ export default function Preview({ model, textColor, plateColor, dark, lift = 0 }
   useEffect(() => {
     if (sceneRef.current) sceneRef.current.liftTarget = lift
   }, [lift])
+
+  useEffect(() => {
+    if (sceneRef.current) sceneRef.current.flipTarget = flip ? Math.PI : 0
+  }, [flip])
+
+  useEffect(() => {
+    sceneRef.current?.backMat.color.set(backColor ?? textColor)
+  }, [backColor, textColor])
 
   useEffect(() => {
     const s = sceneRef.current

@@ -57,7 +57,6 @@ export function PreviewCard(props: {
           : props.emptyText}
       </div>
       {props.busy && <div className="busy">กำลังสร้าง…</div>}
-      {model?.warning && <div className="warn">⚠️ {model.warning}</div>}
       <Preview model={model} textColor={props.topColor} plateColor={props.plateColor} dark={props.dark} />
       <div className="hint">ลากเพื่อหมุน · เลื่อนเพื่อซูม</div>
     </section>

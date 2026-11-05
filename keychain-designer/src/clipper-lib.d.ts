@@ -22,11 +22,13 @@ declare module 'clipper-lib' {
     const EndType: { etClosedPolygon: number; etClosedLine: number; etOpenButt: number; etOpenSquare: number; etOpenRound: number }
 
     class Clipper {
+      StrictlySimple: boolean
       AddPath(path: Path, polyType: number, closed: boolean): boolean
       AddPaths(paths: Paths, polyType: number, closed: boolean): boolean
       Execute(clipType: number, solution: Paths | PolyTree, subjFill: number, clipFill: number): boolean
       static Orientation(path: Path): boolean
       static Area(path: Path): number
+      static CleanPolygon(path: Path, distance?: number): Path
       static GetBounds(paths: Paths): { left: number; top: number; right: number; bottom: number }
     }
     class ClipperOffset {

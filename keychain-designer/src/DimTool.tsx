@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FONTS, type FontOption } from './fonts'
-import { buildDimensional, DEFAULT_RING, type KeychainModel, type RingOptions } from './geometry'
+import { buildDimensional, DEFAULT_RING, DIM_LEVELS, type KeychainModel, type RingOptions } from './geometry'
 import { ColorField, DownloadField, PreviewCard, RingField } from './shared'
 import { FontGroup } from './TextTool'
 
@@ -10,8 +10,6 @@ const MAX_CHARS = 16
 export default function DimTool({ dark }: { dark: boolean }) {
   const [text, setText] = useState('Ava')
   const [size, setSize] = useState(25)
-  const [thickness, setThickness] = useState(8)
-  const [spacing, setSpacing] = useState(-6) // % of letter height
   const [font, setFont] = useState<FontOption>(FONTS.find((f) => f.id === 'poppins')!)
   const [color, setColor] = useState('#d9c9ef')
   const [ring, setRing] = useState<RingOptions>(DEFAULT_RING)
@@ -30,7 +28,7 @@ export default function DimTool({ dark }: { dark: boolean }) {
       }
       setBusy(true)
       try {
-        const m = await buildDimensional(text, font, size, thickness, spacing, ring)
+        const m = await buildDimensional(text, font, size, ring)
         if (id !== buildId.current) return
         setModel(m)
         setError(m ? '' : 'ฟอนต์นี้ไม่มีตัวอักษรที่พิมพ์ ลองเปลี่ยนฟอนต์')
@@ -41,7 +39,7 @@ export default function DimTool({ dark }: { dark: boolean }) {
       }
     }, 150)
     return () => clearTimeout(t)
-  }, [text, font, size, thickness, spacing, ring])
+  }, [text, font, size, ring])
 
   return (
     <main className="workspace">
@@ -59,29 +57,25 @@ export default function DimTool({ dark }: { dark: boolean }) {
             onChange={(e) => setText(e.target.value)}
           />
           <div className="sub">
-            {Array.from(text).length}/{MAX_CHARS} ตัวอักษร · ตัวอักษรทั้งชิ้นเป็นสีเดียว หนาตั้งขึ้นเป็นตัว
+            {Array.from(text).length}/{MAX_CHARS} ตัวอักษร · ทั้งชิ้นเป็นสีเดียว
           </div>
           {error && <div className="error">{error}</div>}
         </div>
 
         <Slider id="dim-size" label="ขนาดความสูงตัวอักษร" unit="mm" min={15} max={50} value={size} onChange={setSize} note="วัดจากความสูงตัวพิมพ์ใหญ่ (H)" />
-        <Slider id="dim-thick" label="ความหนาตัวอักษร" unit="mm" min={4} max={15} value={thickness} onChange={setThickness} />
-        <Slider
-          id="dim-spacing"
-          label="ระยะห่างตัวอักษร"
-          unit="%"
-          min={-15}
-          max={10}
-          value={spacing}
-          onChange={setSpacing}
-          note="ค่าติดลบ = ตัวอักษรชิดกัน/ซ้อนกัน แข็งแรงกว่า"
-        />
+        <div className="field">
+          <label>ความหนา</label>
+          <div className="sub">
+            ตัวอักษรสูงไล่ระดับ {DIM_LEVELS.join(' / ')} mm สลับกันทีละตัว และชิดซ้อนกันเองโดยไม่มีฐาน
+            ทางร้านตั้งค่าไว้ให้พิมพ์ได้แข็งแรง
+          </div>
+        </div>
 
         <div className="field">
           <label>ฟอนต์ (ฟรี ใช้เชิงพาณิชย์ได้)</label>
           <FontGroup title="ภาษาไทย" fonts={FONTS.filter((f) => f.script === 'thai')} value={font} onChange={setFont} sample="กขค Ab" />
           <FontGroup title="ภาษาอังกฤษ" fonts={FONTS.filter((f) => f.script === 'latin')} value={font} onChange={setFont} sample="Abc 123" />
-          <div className="sub">ฟอนต์หนา (Poppins, Kanit, Prompt) เหมาะกับงานนี้ที่สุด</div>
+          <div className="sub">ฟอนต์หนา (Poppins, Kanit, Prompt) เหมาะกับงานนี้ที่สุด · เว้นวรรคจะถูกบีบให้ชิดกัน</div>
         </div>
 
         <RingField value={ring} onChange={setRing} />

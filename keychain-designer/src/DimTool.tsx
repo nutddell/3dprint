@@ -14,6 +14,7 @@ export default function DimTool({ dark }: { dark: boolean }) {
   const [color, setColor] = useState('#d9c9ef')
   const [style, setStyle] = useState<DimStyle>('joined')
   const [baseColor, setBaseColor] = useState('#ffffff')
+  const [exploded, setExploded] = useState(false)
   const [ring, setRing] = useState<RingOptions>(DEFAULT_RING)
   const [model, setModel] = useState<KeychainModel | null>(null)
   const [busy, setBusy] = useState(false)
@@ -52,6 +53,7 @@ export default function DimTool({ dark }: { dark: boolean }) {
         plateColor={style === 'base' ? baseColor : color}
         dark={dark}
         emptyText="พิมพ์ข้อความเพื่อดูตัวอย่าง"
+        explode={style === 'base' ? { on: exploded, onToggle: () => setExploded(!exploded) } : undefined}
       />
 
       <section className="panel card">

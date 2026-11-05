@@ -49,6 +49,8 @@ export function PreviewCard(props: {
   plateColor: string
   dark: boolean
   emptyText: string
+  /** Optional "exploded view" switch: lifts the top part so the base underneath is visible. */
+  explode?: { on: boolean; onToggle: () => void }
 }) {
   const { model } = props
   return (
@@ -59,7 +61,18 @@ export function PreviewCard(props: {
           : props.emptyText}
       </div>
       {props.busy && <div className="busy">กำลังสร้าง…</div>}
-      <Preview model={model} textColor={props.topColor} plateColor={props.plateColor} dark={props.dark} />
+      {props.explode && model && (
+        <button className={`explode-btn ${props.explode.on ? 'on' : ''}`} onClick={props.explode.onToggle} aria-pressed={props.explode.on}>
+          {props.explode.on ? '⬇ ประกอบชิ้นงาน' : '⬆ ดูแยกชิ้น'}
+        </button>
+      )}
+      <Preview
+        model={model}
+        textColor={props.topColor}
+        plateColor={props.plateColor}
+        dark={props.dark}
+        lift={props.explode?.on ? Math.max(12, model ? model.height * 1.6 : 12) : 0}
+      />
       <div className="hint">ลากเพื่อหมุน · เลื่อนเพื่อซูม</div>
     </section>
   )

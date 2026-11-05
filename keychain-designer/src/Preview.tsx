@@ -8,6 +8,8 @@ interface Props {
   textColor: string
   plateColor: string
   dark: boolean
+  /** mm to lift the top part off the base ("exploded" view), animated. */
+  lift?: number
 }
 
 interface Scene3D {
@@ -23,6 +25,8 @@ interface Scene3D {
   /** Framing waits for a real size when the model arrives while its tab is hidden. */
   needsFit: boolean
   host: HTMLDivElement
+  textMesh: THREE.Mesh | null
+  liftTarget: number
   render: () => void
 }
 
@@ -40,7 +44,7 @@ function frame(s: Scene3D) {
   s.controls.target.set(0, 0, 0)
 }
 
-export default function Preview({ model, textColor, plateColor, dark }: Props) {
+export default function Preview({ model, textColor, plateColor, dark, lift = 0 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<Scene3D | null>(null)
 
@@ -80,7 +84,7 @@ export default function Preview({ model, textColor, plateColor, dark }: Props) {
     controls.maxDistance = 800
 
     const render = () => renderer.render(scene, camera)
-    const s: Scene3D = { renderer, camera, controls, scene, group, plateMat, textMat, grid, fitWidth: 0, needsFit: false, host, render }
+    const s: Scene3D = { renderer, camera, controls, scene, group, plateMat, textMat, grid, fitWidth: 0, needsFit: false, host, textMesh: null, liftTarget: 0, render }
     sceneRef.current = s
 
     const resize = () => {
@@ -99,6 +103,8 @@ export default function Preview({ model, textColor, plateColor, dark }: Props) {
     let raf = 0
     const loop = () => {
       if (host.clientWidth > 0) {
+        const m = s.textMesh
+        if (m && Math.abs(m.position.z - s.liftTarget) > 0.01) m.position.z += (s.liftTarget - m.position.z) * 0.18
         controls.update()
         render()
       }
@@ -124,8 +130,11 @@ export default function Preview({ model, textColor, plateColor, dark }: Props) {
       s.group.remove(child)
       ;(child as THREE.Mesh).geometry.dispose()
     }
+    s.textMesh = null
     if (!model) return
-    s.group.add(new THREE.Mesh(model.plate, s.plateMat), new THREE.Mesh(model.text, s.textMat))
+    s.textMesh = new THREE.Mesh(model.text, s.textMat)
+    s.textMesh.position.z = s.liftTarget
+    s.group.add(new THREE.Mesh(model.plate, s.plateMat), s.textMesh)
 
     const span = Math.max(model.width, model.length * 1.6)
     if (s.fitWidth === 0 || s.needsFit || span > s.fitWidth * 1.15 || span < s.fitWidth * 0.6) {
@@ -133,6 +142,10 @@ export default function Preview({ model, textColor, plateColor, dark }: Props) {
       frame(s)
     }
   }, [model])
+
+  useEffect(() => {
+    if (sceneRef.current) sceneRef.current.liftTarget = lift
+  }, [lift])
 
   useEffect(() => {
     const s = sceneRef.current

@@ -3,8 +3,7 @@ import ClipperLib from 'clipper-lib'
 import * as THREE from 'three'
 import { FONTS, THAI_FALLBACK_ID, fontUrl, type FontOption } from './fonts'
 
-/** Clipper works on integers: 1 unit = 1 µm. */
-const S = 1000
+import { CLIPPER_SCALE as S, type Path } from './units'
 
 export const PLATE_THICKNESS = 3 // mm
 export const TEXT_THICKNESS = 2 // mm, raised above the plate
@@ -12,8 +11,6 @@ export const PLATE_MARGIN = 4 // mm around the letters
 const RING_OUTER = 4.5 // mm radius of the keyring loop
 const RING_HOLE = 2 // mm radius of the hole
 
-type Pt = { X: number; Y: number }
-type Path = Pt[]
 
 interface LoadedFont {
   font: hb.Font
@@ -181,7 +178,7 @@ function rect(x0: number, y0: number, x1: number, y1: number): Path {
 }
 
 /** Plate = letters grown by the margin (holes filled) + keyring loop on the left, minus the ring hole. */
-function plateOutline(textPaths: Path[], sizeMm: number): ClipperLib.PolyTree {
+function plateOutline(textPaths: Path[], ringCy: number): ClipperLib.PolyTree {
   const off = new ClipperLib.ClipperOffset(2, 0.02 * S)
   off.AddPaths(textPaths, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon)
   const grown: Path[] = []
@@ -191,7 +188,7 @@ function plateOutline(textPaths: Path[], sizeMm: number): ClipperLib.PolyTree {
   const tb = ClipperLib.Clipper.GetBounds(textPaths)
   const pb = ClipperLib.Clipper.GetBounds(outers)
   const cx = pb.left / S - RING_HOLE - 1.2
-  const cy = sizeMm / 2
+  const cy = ringCy
   const bridge = rect(cx, cy - RING_OUTER, tb.left / S + 0.5, cy + RING_OUTER)
 
   const c = new ClipperLib.Clipper()
@@ -230,6 +227,7 @@ function treeToShapes(tree: ClipperLib.PolyNode): THREE.Shape[] {
 
 export interface KeychainModel {
   plate: THREE.BufferGeometry
+  /** The raised part in the second colour (letters or traced image). */
   text: THREE.BufferGeometry
   /** Overall size in mm. */
   width: number
@@ -238,28 +236,39 @@ export interface KeychainModel {
 }
 
 export async function buildKeychain(text: string, fontOpt: FontOption, sizeMm: number): Promise<KeychainModel | null> {
-  const raw = await textOutlines(text, fontOpt, sizeMm)
-  const letters = union(raw)
-  if (letters.length === 0) return null
+  const letters = union(await textOutlines(text, fontOpt, sizeMm))
+  // Ring sits halfway up the capital letters so it looks centred on the word.
+  return buildFromRaised(letters, sizeMm / 2)
+}
 
-  const plateTree = plateOutline(letters, sizeMm)
-  const plateShapes = treeToShapes(plateTree)
-  const textShapes = treeToShapes(treeFromPaths(letters))
+/**
+ * Raised part (already a clean union, Clipper units) on a plate grown by the margin,
+ * with a keyring loop on the left at height ringCy (mm).
+ */
+export function buildFromRaised(raised: Path[], ringCy?: number): KeychainModel | null {
+  if (raised.length === 0) return null
+  if (ringCy === undefined) {
+    const b = ClipperLib.Clipper.GetBounds(raised)
+    ringCy = (b.top + b.bottom) / 2 / S
+  }
+
+  const plateShapes = treeToShapes(plateOutline(raised, ringCy))
+  const raisedShapes = treeToShapes(treeFromPaths(raised))
 
   const plate = new THREE.ExtrudeGeometry(plateShapes, { depth: PLATE_THICKNESS, bevelEnabled: false })
-  const textGeo = new THREE.ExtrudeGeometry(textShapes, { depth: TEXT_THICKNESS, bevelEnabled: false })
-  textGeo.translate(0, 0, PLATE_THICKNESS)
+  const top = new THREE.ExtrudeGeometry(raisedShapes, { depth: TEXT_THICKNESS, bevelEnabled: false })
+  top.translate(0, 0, PLATE_THICKNESS)
 
   plate.computeBoundingBox()
   const bb = plate.boundingBox!
   const cx = (bb.min.x + bb.max.x) / 2
   const cy = (bb.min.y + bb.max.y) / 2
   plate.translate(-cx, -cy, 0)
-  textGeo.translate(-cx, -cy, 0)
+  top.translate(-cx, -cy, 0)
 
   return {
     plate,
-    text: textGeo,
+    text: top,
     width: bb.max.x - bb.min.x,
     length: bb.max.y - bb.min.y,
     height: PLATE_THICKNESS + TEXT_THICKNESS,

@@ -5,7 +5,7 @@
 | โฟลเดอร์ | งาน | รันบน |
 |---|---|---|
 | [`print3d-queue-gas/`](print3d-queue-gas/) | ระบบหลังร้าน: คิวงานพิมพ์ คำสั่งงาน สต็อก filament การจัดการระบบ | Google Apps Script (Sheet "3DPrint JOB") |
-| [`keychain-designer/`](keychain-designer/) | การทำพวงกุญแจ 3D: ลูกค้าพิมพ์ข้อความ เลือกฟอนต์/ขนาด/สี ดูตัวอย่าง 3D | Vercel (project `3dprint`) |
+| [`keychain-designer/`](keychain-designer/) | เว็บหน้าร้าน: การทำพวงกุญแจ 3D (จากข้อความ) และทำพวงกุญแจจากรูป (2 สี) ดูตัวอย่าง 3D และโหลด STL | Vercel (project `3ddesign`, https://3ddesign-beta.vercel.app) |
 
 ดีไซน์ สี และโลโก้ที่ทุกเว็บใช้ร่วมกัน อยู่ใน [`BRAND.md`](BRAND.md)
 

@@ -3,11 +3,13 @@
 ทุกเว็บใน repo นี้ต้องใช้โลโก้ สี และฟอนต์ชุดเดียวกัน ค่าหลักมาจาก `print3d-queue-gas/index.html`
 
 ## โลโก้
-- ไฟล์ใน Google Drive: `a_high_resolution_clean_graphic_logo_on_a_transpa.png`
-  (ID `1TCIgIjY4dLXY08wZIjGq2cNA7bv19rIx`, PNG พื้นใส ~1.5 MB อยู่ในโฟลเดอร์ "3d print STL")
-- ใช้บนเว็บผ่าน `https://lh3.googleusercontent.com/d/1TCIgIjY4dLXY08wZIjGq2cNA7bv19rIx=h300`
-  (ไฟล์ต้องแชร์แบบ "ทุกคนที่มีลิงก์" ไว้เสมอ)
-- ความสูงโลโก้ใน header: PC 112px, notebook (≤1366px) 96px, mobile (≤600px) 72px
+- ไฟล์หลัก: [`shared/brand/logo.png`](shared/brand/logo.png) โลโก้วงกลม "นวมินทร์ 3D Print" (Nawamin3DPrint) พื้นหลังใส
+- ชื่อร้านบนหน้าเว็บ: **นวมินทร์ 3D Print**
+- เว็บบน Vercel ใช้ไฟล์ย่อขนาดใน `keychain-designer/public/logo.png` (256px) และ `favicon.png` (64px)
+- ความสูงโลโก้ใน header: PC 64px, mobile 44px
+- `print3d-queue-gas/` ยังใช้โลโก้เดิมจาก Google Drive (ID `1TCIgIjY4dLXY08wZIjGq2cNA7bv19rIx`)
+  ถ้าจะเปลี่ยน ให้อัปโหลด `shared/brand/logo.png` ขึ้น Drive แชร์แบบ "ทุกคนที่มีลิงก์"
+  แล้วแก้ FILE_ID ใน `<img class="app-logo">` ของทุกหน้า
 
 ## สี
 | Token | ค่า | ใช้ทำอะไร |

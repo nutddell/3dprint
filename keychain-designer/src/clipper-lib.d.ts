@@ -26,6 +26,7 @@ declare module 'clipper-lib' {
       AddPaths(paths: Paths, polyType: number, closed: boolean): boolean
       Execute(clipType: number, solution: Paths | PolyTree, subjFill: number, clipFill: number): boolean
       static Orientation(path: Path): boolean
+      static Area(path: Path): number
       static GetBounds(paths: Paths): { left: number; top: number; right: number; bottom: number }
     }
     class ClipperOffset {

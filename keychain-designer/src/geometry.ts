@@ -975,7 +975,7 @@ export const MX_DEFAULTS: ClickerParams = {
   boss: 5.6,
 }
 
-export const CLICKER_LENGTH = 35 // mm, fixed body length
+export const CLICKER_LENGTH = 40 // mm, fixed body length
 export const CLICKER_WIDTH = 21 // mm
 const CLICKER_RADIUS = 6
 const CLICKER_FLOOR = 1.2
@@ -986,8 +986,8 @@ const CLICKER_LID = 3 // lid plate thickness
 const CLICKER_NAME_POCKET = 0.6 // name pocket depth in the lid
 const CLICKER_NAME = 1.6 // name piece thickness (stands 1 mm proud)
 const CLICKER_NAME_MARGIN = 2 // mm between the name and the lid edge
-const CLICKER_RING_OUTER = 7.5 // loop radius
-const CLICKER_RING_INNER = 5
+const CLICKER_RING_OUTER = 5 // loop radius (2.5 mm of plastic around the hole)
+const CLICKER_RING_INNER = 2.5 // Ø5 mm hole
 const CLICKER_RING_THICK = 4
 
 export interface ClickerModel extends KeychainModel {
@@ -1020,7 +1020,7 @@ export async function buildClicker(text: string, fontOpt: FontOption, p: Clicker
   const P = CLICKER_FLOOR + p.below // plate top
   const cx = -L / 2 - CLICKER_RING_OUTER + 1.5
   const ring = clip(
-    [circle(cx, 0, CLICKER_RING_OUTER, 96), rect(cx, -3, -L / 2 + 3, 3)],
+    [circle(cx, 0, CLICKER_RING_OUTER, 96), rect(cx, -2.5, -L / 2 + 3, 2.5)],
     [circle(cx, 0, CLICKER_RING_INNER, 96)],
     ClipperLib.ClipType.ctDifference,
   )

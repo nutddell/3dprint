@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
+import DimTool from './DimTool'
 import ImageTool from './ImageTool'
 import TextTool from './TextTool'
 
 const LOGO_URL = `${import.meta.env.BASE_URL}logo.png`
 
-type ToolId = 'text' | 'image'
+type ToolId = 'text' | 'image' | 'dim'
 
 const TOOLS: { id: ToolId | null; label: string; icon: string }[] = [
   { id: 'text', label: 'การทำพวงกุญแจ 3D', icon: '🔑' },
   { id: 'image', label: 'ทำพวงกุญแจจากรูป (2 สี)', icon: '🖼️' },
-  ...Array.from({ length: 4 }, () => ({ id: null, label: 'เร็วๆ นี้', icon: '' })),
+  { id: 'dim', label: 'พวงกุญแจตัวอักษรมิติ', icon: '🔠' },
+  ...Array.from({ length: 3 }, () => ({ id: null, label: 'เร็วๆ นี้', icon: '' })),
 ]
 
 function readSaved(key: string): string | null {
@@ -30,7 +32,10 @@ function save(key: string, value: string) {
 
 export default function App() {
   const [dark, setDark] = useState(() => readSaved('theme') === 'dark')
-  const [tool, setTool] = useState<ToolId>(() => (readSaved('tool') === 'image' ? 'image' : 'text'))
+  const [tool, setTool] = useState<ToolId>(() => {
+    const saved = readSaved('tool')
+    return saved === 'image' || saved === 'dim' ? saved : 'text'
+  })
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
@@ -44,9 +49,15 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <img className="brand-logo" src={LOGO_URL} alt="นวมินทร์ 3D Print" />
-          <span className="brand-name">
-            นวมินทร์ <span>3D Print</span>
-          </span>
+          <div className="brand-text">
+            <span className="brand-name">
+              นวมินทร์<span className="bn-3d">
+                3<b>D</b>
+              </span>{' '}
+              Print
+            </span>
+            <span className="bn-pill">Nawamin3DPrint</span>
+          </div>
         </div>
         <div className="topbar-right">
           <span className="tagline">สร้างไฟล์งาน 3D Print</span>
@@ -82,6 +93,9 @@ export default function App() {
       </div>
       <div hidden={tool !== 'image'}>
         <ImageTool dark={dark} />
+      </div>
+      <div hidden={tool !== 'dim'}>
+        <DimTool dark={dark} />
       </div>
     </div>
   )

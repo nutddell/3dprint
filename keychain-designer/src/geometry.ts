@@ -135,7 +135,7 @@ function glyphPaths(cmds: hb.SvgPathCommand[], ox: number, oy: number, k: number
 }
 
 /** Shape the text with HarfBuzz (correct Thai vowel/tone mark placement) and return its outlines. */
-async function textOutlines(text: string, fontOpt: FontOption, sizeMm: number): Promise<Path[]> {
+async function textOutlines(text: string, fontOpt: FontOption, sizeMm: number, trackingMm = 0): Promise<Path[]> {
   const primary = await loadFont(fontOpt)
   const needFallback = fontOpt.script === 'latin' && Array.from(text).some(isThai)
   const fallback = needFallback ? await loadFont(FONTS.find((f) => f.id === THAI_FALLBACK_ID)!) : null
@@ -155,7 +155,8 @@ async function textOutlines(text: string, fontOpt: FontOption, sizeMm: number): 
       const pos = positions[i]
       const cmds = lf.font.glyphToJson(info.codepoint)
       paths.push(...glyphPaths(cmds, pen + pos.xOffset * k, pos.yOffset * k, k))
-      pen += pos.xAdvance * k
+      // Extra spacing only between letters, never after zero-width Thai marks.
+      pen += pos.xAdvance * k + (pos.xAdvance > 0 ? trackingMm : 0)
     })
   }
   return paths
@@ -185,17 +186,33 @@ function rect(x0: number, y0: number, x1: number, y1: number): Path {
   ].map((p) => ({ X: Math.round(p.X), Y: Math.round(p.Y) }))
 }
 
-/** Plate = letters grown by the margin (holes filled) + keyring loop on the left, minus the ring hole. */
 /**
  * Plate = letters grown by the margin (holes filled) + keyring loop on the chosen side, minus the hole.
  * `anchor` is where the loop lines up along that side: a y (mm) for left/right, an x (mm) for top/bottom.
  */
-function plateOutline(raised: Path[], ring: RingOptions, anchor: number): ClipperLib.PolyTree {
+interface PlateStyle {
+  /** mm the outline is grown by. */
+  grow: number
+  /** mm radius of a morphological closing first: joins letters/marks closer than twice this. */
+  close: number
+  /** Fill the inside of letters (a flat plate) or keep their holes. */
+  fillHoles: boolean
+}
+const FLAT_PLATE: PlateStyle = { grow: PLATE_MARGIN, close: 0, fillHoles: true }
+
+function offset(paths: Path[], mm: number): Path[] {
   const off = new ClipperLib.ClipperOffset(2, 0.02 * S)
-  off.AddPaths(raised, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon)
-  const grown: Path[] = []
-  off.Execute(grown, PLATE_MARGIN * S)
-  const outers = grown.filter((p) => ClipperLib.Clipper.Orientation(p))
+  off.AddPaths(paths, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon)
+  const out: Path[] = []
+  off.Execute(out, mm * S)
+  return out
+}
+
+function plateOutline(raised: Path[], ring: RingOptions, anchor: number, style: PlateStyle = FLAT_PLATE): ClipperLib.PolyTree {
+  let base = raised
+  if (style.close > 0) base = offset(offset(base, style.close), -style.close)
+  if (style.grow > 0) base = offset(base, style.grow)
+  const outers = style.fillHoles ? base.filter((p) => ClipperLib.Clipper.Orientation(p)) : base
 
   // Our Y axis points up, so Clipper's "top" is the lowest y and "bottom" the highest.
   const rb = ClipperLib.Clipper.GetBounds(raised)
@@ -275,6 +292,8 @@ export interface KeychainModel {
   width: number
   length: number
   height: number
+  /** Printability problem worth telling the customer about. */
+  warning?: string
 }
 
 export async function buildKeychain(
@@ -308,19 +327,48 @@ export function buildFromRaised(raised: Path[], ring: RingOptions = DEFAULT_RING
   const plate = new THREE.ExtrudeGeometry(plateShapes, { depth: PLATE_THICKNESS, bevelEnabled: false })
   const top = new THREE.ExtrudeGeometry(raisedShapes, { depth: TEXT_THICKNESS, bevelEnabled: false })
   top.translate(0, 0, PLATE_THICKNESS)
+  return centred(plate, top, PLATE_THICKNESS + TEXT_THICKNESS)
+}
 
+/** Move both parts so the plate is centred on the origin (bottom stays at z = 0) and measure it. */
+function centred(plate: THREE.BufferGeometry, top: THREE.BufferGeometry, height: number): KeychainModel {
   plate.computeBoundingBox()
   const bb = plate.boundingBox!
   const cx = (bb.min.x + bb.max.x) / 2
   const cy = (bb.min.y + bb.max.y) / 2
   plate.translate(-cx, -cy, 0)
   top.translate(-cx, -cy, 0)
+  return { plate, text: top, width: bb.max.x - bb.min.x, length: bb.max.y - bb.min.y, height }
+}
 
-  return {
-    plate,
-    text: top,
-    width: bb.max.x - bb.min.x,
-    length: bb.max.y - bb.min.y,
-    height: PLATE_THICKNESS + TEXT_THICKNESS,
-  }
+export const DIM_BASE_THICKNESS = 3 // mm: joining layer + keyring loop height
+
+/**
+ * Dimensional letters: one colour, the letters themselves stand `thicknessMm` tall.
+ * A low joining layer (letters with small gaps closed, keeping their holes) ties neighbouring
+ * letters and floating Thai marks together and carries the keyring loop.
+ */
+export async function buildDimensional(
+  text: string,
+  fontOpt: FontOption,
+  sizeMm: number,
+  thicknessMm: number,
+  spacingPct: number,
+  ring: RingOptions = DEFAULT_RING,
+): Promise<KeychainModel | null> {
+  const letters = union(await textOutlines(text, fontOpt, sizeMm, (spacingPct / 100) * sizeMm))
+  if (letters.length === 0) return null
+
+  const b = ClipperLib.Clipper.GetBounds(letters)
+  const anchor = ring.side === 'left' || ring.side === 'right' ? sizeMm / 2 : (b.left + b.right) / 2 / S
+  const close = Math.max(2, sizeMm * 0.22) // bridges gaps up to ~0.44 × letter height
+  const baseTree = plateOutline(letters, ring, anchor, { grow: 0, close, fillHoles: false })
+  const pieces = baseTree.Childs().length
+
+  const baseH = Math.min(DIM_BASE_THICKNESS, thicknessMm)
+  const base = new THREE.ExtrudeGeometry(treeToShapes(baseTree), { depth: baseH, bevelEnabled: false })
+  const body = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(letters)), { depth: thicknessMm, bevelEnabled: false })
+  const model = centred(base, body, thicknessMm)
+  if (pieces > 1) model.warning = 'ตัวอักษรบางตัวไม่ติดกัน จะพิมพ์ออกมาเป็นชิ้นแยก ลองลด "ระยะห่างตัวอักษร"'
+  return model
 }

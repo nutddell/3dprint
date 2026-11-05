@@ -20,7 +20,24 @@ interface Scene3D {
   textMat: THREE.MeshStandardMaterial
   grid: THREE.GridHelper
   fitWidth: number
+  /** Framing waits for a real size when the model arrives while its tab is hidden. */
+  needsFit: boolean
+  host: HTMLDivElement
   render: () => void
+}
+
+function frame(s: Scene3D) {
+  if (s.host.clientWidth === 0 || s.host.clientHeight === 0) {
+    s.needsFit = true
+    return
+  }
+  s.needsFit = false
+  const fov = THREE.MathUtils.degToRad(s.camera.fov)
+  const fitH = s.fitWidth / Math.max(s.camera.aspect, 0.6)
+  const dist = (fitH / 2 / Math.tan(fov / 2)) * 1.2 + 10
+  const dir = new THREE.Vector3(0, 1.3, 1).normalize()
+  s.camera.position.copy(dir.multiplyScalar(dist))
+  s.controls.target.set(0, 0, 0)
 }
 
 export default function Preview({ model, textColor, plateColor, dark }: Props) {
@@ -38,7 +55,7 @@ export default function Preview({ model, textColor, plateColor, dark }: Props) {
     const camera = new THREE.PerspectiveCamera(35, 1, 1, 5000)
     camera.position.set(0, 90, 110)
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a70, 1.6))
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x7a70a0, 1.6))
     const sun = new THREE.DirectionalLight(0xffffff, 2.2)
     sun.position.set(-60, 120, 80)
     scene.add(sun)
@@ -63,15 +80,17 @@ export default function Preview({ model, textColor, plateColor, dark }: Props) {
     controls.maxDistance = 800
 
     const render = () => renderer.render(scene, camera)
-    const s: Scene3D = { renderer, camera, controls, scene, group, plateMat, textMat, grid, fitWidth: 0, render }
+    const s: Scene3D = { renderer, camera, controls, scene, group, plateMat, textMat, grid, fitWidth: 0, needsFit: false, host, render }
     sceneRef.current = s
 
     const resize = () => {
       const w = host.clientWidth
       const h = host.clientHeight
+      if (w === 0 || h === 0) return // hidden tab
       renderer.setSize(w, h)
       camera.aspect = w / h
       camera.updateProjectionMatrix()
+      if (s.needsFit) frame(s)
     }
     const ro = new ResizeObserver(resize)
     ro.observe(host)
@@ -79,8 +98,10 @@ export default function Preview({ model, textColor, plateColor, dark }: Props) {
 
     let raf = 0
     const loop = () => {
-      controls.update()
-      render()
+      if (host.clientWidth > 0) {
+        controls.update()
+        render()
+      }
       raf = requestAnimationFrame(loop)
     }
     loop()
@@ -107,14 +128,9 @@ export default function Preview({ model, textColor, plateColor, dark }: Props) {
     s.group.add(new THREE.Mesh(model.plate, s.plateMat), new THREE.Mesh(model.text, s.textMat))
 
     const span = Math.max(model.width, model.length * 1.6)
-    if (s.fitWidth === 0 || span > s.fitWidth * 1.15 || span < s.fitWidth * 0.6) {
+    if (s.fitWidth === 0 || s.needsFit || span > s.fitWidth * 1.15 || span < s.fitWidth * 0.6) {
       s.fitWidth = span
-      const fov = THREE.MathUtils.degToRad(s.camera.fov)
-      const fitH = span / Math.max(s.camera.aspect, 0.6)
-      const dist = (fitH / 2 / Math.tan(fov / 2)) * 1.2 + 10
-      const dir = new THREE.Vector3(0, 1.3, 1).normalize()
-      s.camera.position.copy(dir.multiplyScalar(dist))
-      s.controls.target.set(0, 0, 0)
+      frame(s)
     }
   }, [model])
 
@@ -131,7 +147,7 @@ export default function Preview({ model, textColor, plateColor, dark }: Props) {
     // GridHelper bakes its colours into vertex colours, so rebuild it for the theme.
     s.scene.remove(s.grid)
     s.grid.dispose()
-    s.grid = dark ? new THREE.GridHelper(400, 40, 0x5a4a3e, 0x3a302a) : new THREE.GridHelper(400, 40, 0xcdb9a8, 0xe6d9cd)
+    s.grid = dark ? new THREE.GridHelper(400, 40, 0x4a3f7a, 0x2c2552) : new THREE.GridHelper(400, 40, 0xc9bfe8, 0xe4def5)
     s.grid.position.y = -0.05
     s.scene.add(s.grid)
   }, [dark])

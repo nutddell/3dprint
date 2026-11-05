@@ -3,7 +3,7 @@ import { downloadStl, type StlPart } from './exportStl'
 import type { KeychainModel, RingOptions, RingSide } from './geometry'
 
 /** Common filament colours. */
-const SWATCHES = [
+const STANDARD = [
   { hex: '#ffffff', name: 'ขาว' },
   { hex: '#1f1f1f', name: 'ดำ' },
   { hex: '#8c8c8c', name: 'เทา' },
@@ -16,6 +16,28 @@ const SWATCHES = [
   { hex: '#f28bb5', name: 'ชมพู' },
   { hex: '#7b3fbf', name: 'ม่วง' },
   { hex: '#7a4a24', name: 'น้ำตาล' },
+]
+
+/** Soft pastel filament colours. */
+const PASTEL = [
+  { hex: '#f6c6d6', name: 'ชมพูพาสเทล' },
+  { hex: '#f6b8a8', name: 'พีชพาสเทล' },
+  { hex: '#f9d9b8', name: 'ส้มพาสเทล' },
+  { hex: '#f6e7a6', name: 'เหลืองพาสเทล' },
+  { hex: '#f4ecdc', name: 'ครีม' },
+  { hex: '#cfe3b4', name: 'เขียวพาสเทล' },
+  { hex: '#c8d3ad', name: 'เขียวเซจ' },
+  { hex: '#bfe6d6', name: 'มิ้นต์' },
+  { hex: '#bcdcf2', name: 'ฟ้าพาสเทล' },
+  { hex: '#c4cede', name: 'เทาฟ้า' },
+  { hex: '#d9c9ef', name: 'ม่วงลาเวนเดอร์' },
+  { hex: '#e6d0e8', name: 'ม่วงไลแลค' },
+]
+
+const SWATCHES = [...STANDARD, ...PASTEL]
+const GROUPS = [
+  { title: 'สีมาตรฐาน', items: STANDARD },
+  { title: 'สีพาสเทล', items: PASTEL },
 ]
 
 export function PreviewCard(props: {
@@ -35,6 +57,7 @@ export function PreviewCard(props: {
           : props.emptyText}
       </div>
       {props.busy && <div className="busy">กำลังสร้าง…</div>}
+      {model?.warning && <div className="warn">⚠️ {model.warning}</div>}
       <Preview model={model} textColor={props.topColor} plateColor={props.plateColor} dark={props.dark} />
       <div className="hint">ลากเพื่อหมุน · เลื่อนเพื่อซูม</div>
     </section>
@@ -50,22 +73,29 @@ export function ColorField(props: { label: string; value: string; onChange: (v: 
         <label>{props.label}</label>
         <span className="value">{named?.name ?? props.value}</span>
       </div>
-      <div className="swatches">
-        {SWATCHES.map((s) => (
-          <button
-            key={s.hex}
-            className={`swatch ${current === s.hex ? 'selected' : ''}`}
-            style={{ background: s.hex }}
-            title={s.name}
-            aria-label={s.name}
-            onClick={() => props.onChange(s.hex)}
-          />
-        ))}
-        <label className={`swatch custom ${named ? '' : 'selected'}`} title="เลือกสีเอง">
-          <input type="color" value={props.value} onChange={(e) => props.onChange(e.target.value)} aria-label="เลือกสีเอง" />
-          <span>+</span>
-        </label>
-      </div>
+      {GROUPS.map((g, gi) => (
+        <div key={g.title} className="swatch-group">
+          <div className="swatch-title">{g.title}</div>
+          <div className="swatches">
+            {g.items.map((s) => (
+              <button
+                key={s.hex}
+                className={`swatch ${current === s.hex ? 'selected' : ''}`}
+                style={{ background: s.hex }}
+                title={s.name}
+                aria-label={s.name}
+                onClick={() => props.onChange(s.hex)}
+              />
+            ))}
+            {gi === GROUPS.length - 1 && (
+              <label className={`swatch custom ${named ? '' : 'selected'}`} title="เลือกสีเอง">
+                <input type="color" value={props.value} onChange={(e) => props.onChange(e.target.value)} aria-label="เลือกสีเอง" />
+                <span>+</span>
+              </label>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -78,6 +108,8 @@ export function DownloadField(props: {
   topColor: string
   plateColor: string
   onError: (msg: string) => void
+  /** One-colour model: offer a single combined file only. */
+  single?: boolean
 }) {
   const off = !props.model || props.disabled
   const save = (part: StlPart) => {
@@ -91,6 +123,14 @@ export function DownloadField(props: {
   return (
     <div className="field download">
       <label>ดาวน์โหลดไฟล์ STL</label>
+      {props.single ? (
+        <div className="download-grid">
+          <button className="dl-btn primary" disabled={off} onClick={() => save('all')}>
+            ดาวน์โหลด STL
+          </button>
+        </div>
+      ) : (
+      <>
       <div className="download-grid">
         <button className="dl-btn" disabled={off} onClick={() => save('plate')}>
           <span className="dl-dot" style={{ background: props.plateColor }} />
@@ -108,6 +148,8 @@ export function DownloadField(props: {
         พิมพ์ 2 สี: โหลดไฟล์ฐานกับ{props.topLabel} แล้วลากทั้ง 2 ไฟล์เข้า Creality Print พร้อมกัน
         เมื่อถามว่าจะโหลดเป็นวัตถุเดียวหลายชิ้นส่วนไหม ให้ตอบ "ใช่" แล้วเลือก filament ให้แต่ละชิ้น
       </div>
+      </>
+      )}
     </div>
   )
 }

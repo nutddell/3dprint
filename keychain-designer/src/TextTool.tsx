@@ -117,7 +117,7 @@ export default function TextTool({ dark }: { dark: boolean }) {
   )
 }
 
-function FontGroup(props: {
+export function FontGroup(props: {
   title: string
   fonts: FontOption[]
   value: FontOption

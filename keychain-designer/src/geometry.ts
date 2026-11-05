@@ -775,7 +775,8 @@ export async function textOutline(text: string, fontOpt: FontOption, sizeMm: num
 
 export const GRIP_DIAMETER = 35 // mm, the grip it is glued on
 export const GRIP_LEVELS = [4, 3.5, 3] // mm letter heights, cycled
-export const GRIP_MAX_LETTERS = 10
+export const GRIP_MAX_LETTERS = 12
+export const GRIP_MAX_LINES = 3
 const GRIP_FLOOR = 1 // mm base floor
 const GRIP_LIP = 1.2 // mm rim above the floor
 const GRIP_WALL = 1.5 // mm from the disc edge to the letters (rim wall + fit clearance)
@@ -810,58 +811,103 @@ export interface GriptokModel extends KeychainModel {
   diameter: number
 }
 
+const GRIP_LINE_GAP = 1.2 // mm between lines on a multi-line griptok (a rim wall stands in it)
+const GRIP_BAND_SPREAD = 0.97 // share of the band's widest row a line spans
+
+/**
+ * Vertical position inside a line: the letter body (baseline to capital height) gets the room,
+ * whatever sits above (Thai marks, ascenders) or below (descenders, tails) is squeezed to half scale.
+ * Returns 0..1 from the bottom of the line to the top.
+ */
+function lineHeightMap(lb: ReturnType<typeof boundsMm>, cap: number) {
+  const below = Math.max(0, -lb.minY)
+  const above = Math.max(0, lb.maxY - cap)
+  const weight = below * 0.5 + cap + above * 0.5
+  return (y: number) =>
+    y < 0 ? ((y - lb.minY) * 0.5) / weight : y <= cap ? (below * 0.5 + y) / weight : (below * 0.5 + cap + (y - cap) * 0.5) / weight
+}
+
 export async function buildGriptok(text: string, fontOpt: FontOption): Promise<GriptokModel | null> {
-  const line = text.replace(/\s+/g, ' ').trim()
-  if (!line) return null
+  // One word: fisheye over the whole disc. Several words (space or Enter): one line each, every
+  // line warped to fill its own band of the circle, like a stamp.
+  const lines = text.split(/\s+/).filter(Boolean).slice(0, GRIP_MAX_LINES)
+  if (lines.length === 0) return null
   const REF = 20 // lay out at 20 mm (same joining rules as the keychains), then warp
-  const laid = await layoutLetters(line, fontOpt, REF, true, GRIP_OVERLAP_SCALE)
+  const laid = (await Promise.all(lines.map((l) => layoutLetters(l, fontOpt, REF, true, GRIP_OVERLAP_SCALE)))).filter((l) => l.length > 0)
   if (laid.length === 0) return null
 
-  // Fisheye warp: x across the word maps linearly across the circle; at each x the word's full
-  // height maps onto the circle's full height there.
   const R = GRIP_DIAMETER / 2 - GRIP_WALL
   const Re = R * GRIP_OVERFLOW
-  const lb = boundsMm(union(laid.flat()))
-  const w = lb.maxX - lb.minX
-  const h = lb.maxY - lb.minY
-  // Vertical: the letter body (baseline to capital height) gets the room; whatever sits above
-  // (Thai vowel/tone marks, ascenders) or below (descenders, Thai tails) is squeezed to half scale.
-  const below = Math.max(0, -lb.minY)
-  const above = Math.max(0, lb.maxY - REF)
-  const weight = below * 0.5 + REF + above * 0.5
-  const vOf = (y: number) =>
-    y < 0 ? ((y - lb.minY) * 0.5) / weight : y <= REF ? (below * 0.5 + y) / weight : (below * 0.5 + REF + (y - REF) * 0.5) / weight
-  const warp = (paths: Path[]): Path[] =>
-    densify(paths, Math.min(w, h) / 60).map((p) =>
-      p.map((q) => {
-        const u = (q.X / S - lb.minX) / w
-        const v = vOf(q.Y / S)
+  const arc = (x: number) => Math.sqrt(Math.max(Re * Re - x * x, 0)) // circle's half height at x
+  const chord = (y: number) => Math.sqrt(Math.max(Re * Re - y * y, 0)) // circle's half width at y
+  const n = laid.length
+  const bandH = (2 * Re - (n - 1) * GRIP_LINE_GAP) / n
+
+  const warpLine = (line: Path[][], i: number): Path[][] => {
+    const lb = boundsMm(union(line.flat()))
+    const w = lb.maxX - lb.minX
+    const vOf = lineHeightMap(lb, REF)
+    const top = Re - i * (bandH + GRIP_LINE_GAP)
+    const bottom = top - bandH
+    const map = (x: number, y: number): [number, number] => {
+      const u = (x - lb.minX) / w
+      const v = vOf(y)
+      if (n === 1) {
+        // Fisheye: x spreads linearly across the circle, the full height maps onto the circle's
+        // height at that x (end letters keep some height thanks to GRIP_SPREAD).
         const X = (2 * u - 1) * Re * GRIP_SPREAD
-        const half = Math.sqrt(Math.max(Re * Re - X * X, 0))
-        const Y = (2 * v - 1) * half
-        return { X: Math.round(X * S), Y: Math.round(Y * S) }
-      }),
+        return [X, (2 * v - 1) * arc(X)]
+      }
+      // Band: the line keeps upright letters and spans the circle's width at the band's widest
+      // row; each column is then stretched between the band edges, which follow the circle where
+      // the band meets it (top line: curved top, bottom line: curved bottom).
+      const widest = Math.min(Math.max(0, bottom), top) // band row closest to the centre
+      const X = (2 * u - 1) * chord(widest) * GRIP_BAND_SPREAD
+      const lo = Math.max(bottom, -arc(X))
+      const hi = Math.min(top, arc(X))
+      return [X, lo + v * (hi - lo)]
+    }
+    return line.map((l) =>
+      densify(l, Math.min(w, lb.maxY - lb.minY) / 60).map((p) =>
+        p.map((q) => {
+          const [X, Y] = map(q.X / S, q.Y / S)
+          return { X: Math.round(X * S), Y: Math.round(Y * S) }
+        }),
+      ),
     )
+  }
 
   const disc = [circle(0, 0, R, 160)]
-  const band = R // stem sizes for joining pieces
+  const band = Math.min(R, bandH) // stem sizes for joining pieces
   const letters: Path[][] = []
-  for (const l of laid) {
-    // Trim to the circle, drop crumbs the trim leaves, re-join what is left of the letter.
-    const kept = clip(union(warp(l)), disc, ClipperLib.ClipType.ctIntersection).filter(
-      (p) => Math.abs(ClipperLib.Clipper.Area(p)) / (S * S) >= 0.6 || !ClipperLib.Clipper.Orientation(p),
-    )
-    if (kept.some((p) => ClipperLib.Clipper.Orientation(p))) letters.push(joinLetterPieces(kept, band / 2))
-  }
+  const lineOfLetter: number[] = []
+  laid.forEach((line, i) => {
+    for (const l of warpLine(line, i)) {
+      // Trim to the circle, drop crumbs the trim leaves, re-join what is left of the letter.
+      const kept = clip(union(l), disc, ClipperLib.ClipType.ctIntersection).filter(
+        (p) => Math.abs(ClipperLib.Clipper.Area(p)) / (S * S) >= 0.6 || !ClipperLib.Clipper.Orientation(p),
+      )
+      if (kept.some((p) => ClipperLib.Clipper.Orientation(p))) {
+        // Remove hair-thin spikes the trim can leave (too thin to print anyway).
+        const clean = offset(offset(kept, -0.1), 0.1)
+        letters.push(joinLetterPieces(clean.length ? clean : kept, band / 2))
+        lineOfLetter.push(i)
+      }
+    }
+  })
   if (letters.length === 0) return null
 
-  // Everything must print as one piece: a letter that touches none of the ones before it gets a stem.
+  // Each line must print as one piece: a letter that touches none of the ones before it on its line
+  // gets a stem. (Lines are separate pieces; each sits in its own pocket.)
   let placed: Path[] = []
+  let lineSoFar: Path[] = []
   letters.forEach((l, i) => {
-    if (i > 0 && areaMm2(clip(l, placed, ClipperLib.ClipType.ctIntersection)) < 0.3) {
-      const joined = joinLetterPieces([...placed, ...l], band)
-      letters[i] = union([...l, ...clip(clip(joined, placed, ClipperLib.ClipType.ctDifference), disc, ClipperLib.ClipType.ctIntersection)])
+    if (i > 0 && lineOfLetter[i] !== lineOfLetter[i - 1]) lineSoFar = []
+    if (lineSoFar.length && areaMm2(clip(l, lineSoFar, ClipperLib.ClipType.ctIntersection)) < 0.3) {
+      const joined = joinLetterPieces([...lineSoFar, ...l], band / 2)
+      letters[i] = union([...l, ...clip(clip(joined, lineSoFar, ClipperLib.ClipType.ctDifference), disc, ClipperLib.ClipType.ctIntersection)])
     }
+    lineSoFar = union([...lineSoFar, ...letters[i]])
     placed = union([...placed, ...letters[i]])
   })
   const word = placed

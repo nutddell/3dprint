@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FONTS, type FontOption } from './fonts'
-import { buildGriptok, countLetters, GRIP_DIAMETER, GRIP_LEVELS, GRIP_MAX_LETTERS, type GriptokModel } from './geometry'
+import { buildGriptok, countLetters, GRIP_DIAMETER, GRIP_LEVELS, GRIP_MAX_LETTERS, GRIP_MAX_LINES, type GriptokModel } from './geometry'
 import { ColorField, DownloadField, PreviewCard } from './shared'
 import { FontGroup } from './TextTool'
 
@@ -44,9 +44,10 @@ export default function GripTool({ dark }: { dark: boolean }) {
     // Thai marks are free; anything past the letter or line limit is cut off (also when pasting).
     let out = ''
     for (const ch of Array.from(v)) {
-      if (ch === '\n') continue // one line only
-      if (countLetters(out + ch) > GRIP_MAX_LETTERS) break
-      out += ch
+      const c = ch === '\n' ? ' ' : ch // Enter works like a space: next word, next line
+      if (c === ' ' && (out.endsWith(' ') || out.trim().split(/\s+/).length >= GRIP_MAX_LINES)) continue
+      if (countLetters(out + c) > GRIP_MAX_LETTERS) break
+      out += c
     }
     setText(out)
   }
@@ -70,12 +71,12 @@ export default function GripTool({ dark }: { dark: boolean }) {
             id="grip-text"
             className="text-input"
             value={text}
-            placeholder="เช่น รวย, ปัง, Lucky"
+            placeholder="เช่น รวย หรือ SUM MER CUT"
             onChange={(e) => onText(e.target.value)}
           />
           <div className="sub">
-            {letters}/{GRIP_MAX_LETTERS} ตัวอักษร (สระ/วรรณยุกต์ไม่นับ) · คำเดียวบรรทัดเดียว ยืดเต็มวง: ตัวกลางสูงเต็มวง
-            ตัวริมซ้ายขวาโค้งตามขอบ
+            {letters}/{GRIP_MAX_LETTERS} ตัวอักษร (สระ/วรรณยุกต์ไม่นับ) · คำเดียว: ยืดเต็มวงแบบเลนส์ตาปลา ·
+            เว้นวรรค = ขึ้นบรรทัดใหม่ (ไม่เกิน {GRIP_MAX_LINES} บรรทัด) แต่ละบรรทัดยืดเต็มแถบของตัวเอง
           </div>
           {error && <div className="error">{error}</div>}
         </div>

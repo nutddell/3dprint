@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { buildFromRaised, type KeychainModel } from './geometry'
+import { buildFromRaised, DEFAULT_RING, type KeychainModel, type RingOptions } from './geometry'
 import { inkField, loadImage, traceImage, type LoadedImage } from './imageTrace'
-import { ColorField, DownloadField, PreviewCard } from './shared'
+import { ColorField, DownloadField, PreviewCard, RingField } from './shared'
 
 const WIDTH_MIN = 30
 const WIDTH_MAX = 120
@@ -13,6 +13,7 @@ export default function ImageTool({ dark }: { dark: boolean }) {
   const [width, setWidth] = useState(70)
   const [topColor, setTopColor] = useState('#2563eb')
   const [plateColor, setPlateColor] = useState('#ffffff')
+  const [ring, setRing] = useState<RingOptions>(DEFAULT_RING)
   const [model, setModel] = useState<KeychainModel | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -47,7 +48,7 @@ export default function ImageTool({ dark }: { dark: boolean }) {
       setBusy(true)
       try {
         const traced = traceImage(img, invert, level / 100, width)
-        const m = traced ? buildFromRaised(traced.paths) : null
+        const m = traced ? buildFromRaised(traced.paths, ring) : null
         if (id !== buildId.current) return
         setModel(m)
         setError(m ? '' : 'ไม่พบลายในรูป ลองปรับ "ระดับการแยกลาย" หรือกด "สลับลายกับพื้น"')
@@ -58,7 +59,7 @@ export default function ImageTool({ dark }: { dark: boolean }) {
       }
     }, 200)
     return () => clearTimeout(t)
-  }, [img, invert, level, width])
+  }, [img, invert, level, width, ring])
 
   // 2D check of which pixels become the raised colour.
   useEffect(() => {
@@ -173,6 +174,8 @@ export default function ImageTool({ dark }: { dark: boolean }) {
             สลับลายกับพื้น (ใช้กับลายสีอ่อนบนพื้นเข้ม)
           </label>
         </div>
+
+        <RingField value={ring} onChange={setRing} />
 
         <ColorField label="สีลาย" value={topColor} onChange={setTopColor} />
         <ColorField label="สีพื้นหลัง" value={plateColor} onChange={setPlateColor} />

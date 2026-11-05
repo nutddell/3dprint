@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FONTS, fontFamily, type FontOption } from './fonts'
-import { buildKeychain, type KeychainModel } from './geometry'
-import { ColorField, DownloadField, PreviewCard } from './shared'
+import { buildKeychain, DEFAULT_RING, type KeychainModel, type RingOptions } from './geometry'
+import { ColorField, DownloadField, PreviewCard, RingField } from './shared'
 
 const SIZE_MIN = 8
 const SIZE_MAX = 40
@@ -13,6 +13,7 @@ export default function TextTool({ dark }: { dark: boolean }) {
   const [font, setFont] = useState<FontOption>(FONTS.find((f) => f.id === 'kanit')!)
   const [textColor, setTextColor] = useState('#e8731a')
   const [plateColor, setPlateColor] = useState('#1e2f6b')
+  const [ring, setRing] = useState<RingOptions>(DEFAULT_RING)
   const [model, setModel] = useState<KeychainModel | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -29,7 +30,7 @@ export default function TextTool({ dark }: { dark: boolean }) {
       }
       setBusy(true)
       try {
-        const m = await buildKeychain(text, font, size)
+        const m = await buildKeychain(text, font, size, ring)
         if (id !== buildId.current) return
         setModel(m)
         setError(m ? '' : 'ฟอนต์นี้ไม่มีตัวอักษรที่พิมพ์ ลองเปลี่ยนฟอนต์')
@@ -40,7 +41,7 @@ export default function TextTool({ dark }: { dark: boolean }) {
       }
     }, 150)
     return () => clearTimeout(t)
-  }, [text, font, size])
+  }, [text, font, size, ring])
 
   const thaiFonts = FONTS.filter((f) => f.script === 'thai')
   const latinFonts = FONTS.filter((f) => f.script === 'latin')
@@ -96,6 +97,8 @@ export default function TextTool({ dark }: { dark: boolean }) {
           <FontGroup title="ภาษาอังกฤษ" fonts={latinFonts} value={font} onChange={setFont} sample="Abc 123" />
           <div className="sub">ฟอนต์ภาษาอังกฤษจะใช้ Kanit กับตัวอักษรไทย</div>
         </div>
+
+        <RingField value={ring} onChange={setRing} />
 
         <ColorField label="สีตัวอักษร" value={textColor} onChange={setTextColor} />
         <ColorField label="สีพื้นหลัง" value={plateColor} onChange={setPlateColor} />

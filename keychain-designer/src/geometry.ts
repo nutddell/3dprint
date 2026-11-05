@@ -8,8 +8,16 @@ import { CLIPPER_SCALE as S, type Path } from './units'
 export const PLATE_THICKNESS = 3 // mm
 export const TEXT_THICKNESS = 2 // mm, raised above the plate
 export const PLATE_MARGIN = 4 // mm around the letters
-const RING_OUTER = 4.5 // mm radius of the keyring loop
-const RING_HOLE = 2 // mm radius of the hole
+const RING_WALL = 2.5 // mm of plastic around the hole
+const RING_GAP = 1.2 // mm between the hole and the plate edge
+
+export type RingSide = 'left' | 'right' | 'top' | 'bottom'
+export interface RingOptions {
+  side: RingSide
+  /** Hole diameter in mm. */
+  holeDiameter: number
+}
+export const DEFAULT_RING: RingOptions = { side: 'left', holeDiameter: 5 }
 
 
 interface LoadedFont {
@@ -178,22 +186,56 @@ function rect(x0: number, y0: number, x1: number, y1: number): Path {
 }
 
 /** Plate = letters grown by the margin (holes filled) + keyring loop on the left, minus the ring hole. */
-function plateOutline(textPaths: Path[], ringCy: number): ClipperLib.PolyTree {
+/**
+ * Plate = letters grown by the margin (holes filled) + keyring loop on the chosen side, minus the hole.
+ * `anchor` is where the loop lines up along that side: a y (mm) for left/right, an x (mm) for top/bottom.
+ */
+function plateOutline(raised: Path[], ring: RingOptions, anchor: number): ClipperLib.PolyTree {
   const off = new ClipperLib.ClipperOffset(2, 0.02 * S)
-  off.AddPaths(textPaths, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon)
+  off.AddPaths(raised, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon)
   const grown: Path[] = []
   off.Execute(grown, PLATE_MARGIN * S)
   const outers = grown.filter((p) => ClipperLib.Clipper.Orientation(p))
 
-  const tb = ClipperLib.Clipper.GetBounds(textPaths)
+  // Our Y axis points up, so Clipper's "top" is the lowest y and "bottom" the highest.
+  const rb = ClipperLib.Clipper.GetBounds(raised)
   const pb = ClipperLib.Clipper.GetBounds(outers)
-  const cx = pb.left / S - RING_HOLE - 1.2
-  const cy = ringCy
-  const bridge = rect(cx, cy - RING_OUTER, tb.left / S + 0.5, cy + RING_OUTER)
+  const r = { minX: rb.left / S, maxX: rb.right / S, minY: rb.top / S, maxY: rb.bottom / S }
+  const p = { minX: pb.left / S, maxX: pb.right / S, minY: pb.top / S, maxY: pb.bottom / S }
+
+  const hole = ring.holeDiameter / 2
+  const outer = hole + RING_WALL
+  const reach = hole + RING_GAP // ring centre distance beyond the plate edge
+  let cx: number
+  let cy: number
+  let bridge: Path
+  // The bridge joins the loop to the plate and runs a little way into the design so it always connects.
+  switch (ring.side) {
+    case 'left':
+      cx = p.minX - reach
+      cy = anchor
+      bridge = rect(cx, cy - outer, r.minX + outer, cy + outer)
+      break
+    case 'right':
+      cx = p.maxX + reach
+      cy = anchor
+      bridge = rect(r.maxX - outer, cy - outer, cx, cy + outer)
+      break
+    case 'top':
+      cx = anchor
+      cy = p.maxY + reach
+      bridge = rect(cx - outer, r.maxY - outer, cx + outer, cy)
+      break
+    case 'bottom':
+      cx = anchor
+      cy = p.minY - reach
+      bridge = rect(cx - outer, cy, cx + outer, r.minY + outer)
+      break
+  }
 
   const c = new ClipperLib.Clipper()
-  c.AddPaths([...outers, circle(cx, cy, RING_OUTER), bridge], ClipperLib.PolyType.ptSubject, true)
-  c.AddPath(circle(cx, cy, RING_HOLE), ClipperLib.PolyType.ptClip, true)
+  c.AddPaths([...outers, circle(cx, cy, outer), bridge], ClipperLib.PolyType.ptSubject, true)
+  c.AddPath(circle(cx, cy, hole), ClipperLib.PolyType.ptClip, true)
   const tree = new ClipperLib.PolyTree()
   c.Execute(ClipperLib.ClipType.ctDifference, tree, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero)
   return tree
@@ -235,24 +277,32 @@ export interface KeychainModel {
   height: number
 }
 
-export async function buildKeychain(text: string, fontOpt: FontOption, sizeMm: number): Promise<KeychainModel | null> {
+export async function buildKeychain(
+  text: string,
+  fontOpt: FontOption,
+  sizeMm: number,
+  ring: RingOptions = DEFAULT_RING,
+): Promise<KeychainModel | null> {
   const letters = union(await textOutlines(text, fontOpt, sizeMm))
-  // Ring sits halfway up the capital letters so it looks centred on the word.
-  return buildFromRaised(letters, sizeMm / 2)
+  // On the left/right the loop sits halfway up the capitals so it looks centred on the word
+  // (Thai marks above/below would otherwise pull it off-centre).
+  const sideAnchor = ring.side === 'left' || ring.side === 'right' ? sizeMm / 2 : undefined
+  return buildFromRaised(letters, ring, sideAnchor)
 }
 
 /**
  * Raised part (already a clean union, Clipper units) on a plate grown by the margin,
- * with a keyring loop on the left at height ringCy (mm).
+ * with a keyring loop. `anchor` overrides where the loop lines up along its side (mm);
+ * by default it is centred on the design.
  */
-export function buildFromRaised(raised: Path[], ringCy?: number): KeychainModel | null {
+export function buildFromRaised(raised: Path[], ring: RingOptions = DEFAULT_RING, anchor?: number): KeychainModel | null {
   if (raised.length === 0) return null
-  if (ringCy === undefined) {
+  if (anchor === undefined) {
     const b = ClipperLib.Clipper.GetBounds(raised)
-    ringCy = (b.top + b.bottom) / 2 / S
+    anchor = ring.side === 'left' || ring.side === 'right' ? (b.top + b.bottom) / 2 / S : (b.left + b.right) / 2 / S
   }
 
-  const plateShapes = treeToShapes(plateOutline(raised, ringCy))
+  const plateShapes = treeToShapes(plateOutline(raised, ring, anchor))
   const raisedShapes = treeToShapes(treeFromPaths(raised))
 
   const plate = new THREE.ExtrudeGeometry(plateShapes, { depth: PLATE_THICKNESS, bevelEnabled: false })

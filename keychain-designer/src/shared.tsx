@@ -1,6 +1,6 @@
 import Preview from './Preview'
 import { downloadStl, type StlPart } from './exportStl'
-import type { KeychainModel } from './geometry'
+import type { KeychainModel, RingOptions, RingSide } from './geometry'
 
 /** Common filament colours. */
 const SWATCHES = [
@@ -107,6 +107,52 @@ export function DownloadField(props: {
       <div className="sub">
         พิมพ์ 2 สี: โหลดไฟล์ฐานกับ{props.topLabel} แล้วลากทั้ง 2 ไฟล์เข้า Creality Print พร้อมกัน
         เมื่อถามว่าจะโหลดเป็นวัตถุเดียวหลายชิ้นส่วนไหม ให้ตอบ "ใช่" แล้วเลือก filament ให้แต่ละชิ้น
+      </div>
+    </div>
+  )
+}
+
+const HOLE_SIZES = [3, 5, 7]
+const SIDES: { id: RingSide; label: string }[] = [
+  { id: 'left', label: '⬅ ซ้าย' },
+  { id: 'right', label: 'ขวา ➡' },
+  { id: 'top', label: '⬆ บน' },
+  { id: 'bottom', label: '⬇ ล่าง' },
+]
+
+export function RingField(props: { value: RingOptions; onChange: (v: RingOptions) => void }) {
+  const { value } = props
+  return (
+    <div className="field">
+      <div className="row">
+        <label>ห่วงพวงกุญแจ</label>
+        <span className="value">รู {value.holeDiameter} mm</span>
+      </div>
+      <div className="sub">ขนาดรู (เส้นผ่านศูนย์กลาง)</div>
+      <div className="segmented" role="group" aria-label="ขนาดรู">
+        {HOLE_SIZES.map((d) => (
+          <button
+            key={d}
+            className={value.holeDiameter === d ? 'selected' : ''}
+            aria-pressed={value.holeDiameter === d}
+            onClick={() => props.onChange({ ...value, holeDiameter: d })}
+          >
+            {d} mm
+          </button>
+        ))}
+      </div>
+      <div className="sub">ตำแหน่งห่วง</div>
+      <div className="segmented" role="group" aria-label="ตำแหน่งห่วง">
+        {SIDES.map((s) => (
+          <button
+            key={s.id}
+            className={value.side === s.id ? 'selected' : ''}
+            aria-pressed={value.side === s.id}
+            onClick={() => props.onChange({ ...value, side: s.id })}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
     </div>
   )

@@ -139,7 +139,7 @@ export function FontGroup(props: {
               {props.sample}
             </span>
             <span className="font-name">{f.name}</span>
-            <span className={`font-tag ${f.style === 'ทางการ' ? 'formal' : 'casual'}`}>{f.style}</span>
+            <span className={`font-tag ${f.style === 'ทางการ' ? 'formal' : f.style === 'อ้วนกลม' ? 'chunky' : 'casual'}`}>{f.style}</span>
           </button>
         ))}
       </div>

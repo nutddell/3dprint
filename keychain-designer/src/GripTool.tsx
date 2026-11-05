@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { FONTS, type FontOption } from './fonts'
-import { buildGriptok, countLetters, GRIP_DIAMETER, GRIP_LEVELS, GRIP_MAX_LETTERS, GRIP_MAX_LINES, type GriptokModel } from './geometry'
-import { ColorField, DownloadField, PreviewCard } from './shared'
+import { saveStl, fileStem } from './exportStl'
+import { buildGriptok, countLetters, GRIP_DIAMETER, GRIP_LETTER_HEIGHT, GRIP_MAX_LETTERS, GRIP_MAX_LINES, type GriptokModel } from './geometry'
+import { ColorField, PreviewCard } from './shared'
 import { FontGroup } from './TextTool'
 
 /** Griptok top: one word warped to fill the whole Ø35 mm disc as dimensional letters, on a base with a locating rim. */
 export default function GripTool({ dark }: { dark: boolean }) {
   const [text, setText] = useState('รวย')
-  const [font, setFont] = useState<FontOption>(FONTS.find((f) => f.id === 'kanit')!)
-  const [color, setColor] = useState('#f6c6d6')
+  const [font, setFont] = useState<FontOption>(FONTS.find((f) => f.id === 'mitr')!)
+  // One colour per line (like a stamp with orange / blue / pink rows).
+  const [colors, setColors] = useState(['#e8731a', '#bcdcf2', '#f6c6d6'])
+  const setLineColor = (i: number, c: string) => setColors((cs) => cs.map((x, j) => (j === i ? c : x)))
   const [baseColor, setBaseColor] = useState('#ffffff')
   const [exploded, setExploded] = useState(false)
   const [model, setModel] = useState<GriptokModel | null>(null)
@@ -16,6 +19,10 @@ export default function GripTool({ dark }: { dark: boolean }) {
   const [error, setError] = useState('')
   const buildId = useRef(0)
   const letters = countLetters(text)
+  const lineWords = text.split(/\s+/).filter(Boolean).slice(0, GRIP_MAX_LINES)
+  if (lineWords.length === 0) lineWords.push('')
+  const off = !model || busy
+  const stem = fileStem(text ? `grip-${text}` : 'grip')
 
   useEffect(() => {
     const id = ++buildId.current
@@ -57,7 +64,8 @@ export default function GripTool({ dark }: { dark: boolean }) {
       <PreviewCard
         model={model}
         busy={busy}
-        topColor={color}
+        topColor={colors[0]}
+        partColors={colors}
         plateColor={baseColor}
         dark={dark}
         emptyText="พิมพ์ชื่อเพื่อดูตัวอย่าง"
@@ -85,7 +93,7 @@ export default function GripTool({ dark }: { dark: boolean }) {
           <label>ขนาด</label>
           <div className="sub">
             {`ฐานกลม Ø${GRIP_DIAMETER} mm`}
-            {` · ความหนาตัวอักษรไล่ระดับ ${GRIP_LEVELS.join(' / ')} mm บนฐานมีขอบล็อก`}
+            {` · ตัวอักษรหนา ${GRIP_LETTER_HEIGHT} mm เท่ากันทุกตัว บนฐานมีขอบล็อก`}
           </div>
         </div>
 
@@ -93,23 +101,50 @@ export default function GripTool({ dark }: { dark: boolean }) {
           <label>ฟอนต์</label>
           <FontGroup title="ภาษาไทย" fonts={FONTS.filter((f) => f.script === 'thai')} value={font} onChange={setFont} sample="กขค Ab" />
           <FontGroup title="ภาษาอังกฤษ" fonts={FONTS.filter((f) => f.script === 'latin')} value={font} onChange={setFont} sample="Abc 123" />
-          <div className="sub">ฟอนต์หนา (Kanit, Prompt, Poppins) เหมาะกับหัวกริปที่สุด</div>
+          <div className="sub">ฟอนต์อ้วนกลม (Mitr, Bagel Fat One, Titan One) เหมาะกับหัวกริปที่สุด</div>
         </div>
 
-        <ColorField label="สีตัวอักษร" value={color} onChange={setColor} />
+        {lineWords.map((w, i) => (
+          <ColorField
+            key={i}
+            label={lineWords.length > 1 ? `สีบรรทัด ${i + 1} · ${w}` : 'สีตัวอักษร'}
+            value={colors[i]}
+            onChange={(c) => setLineColor(i, c)}
+          />
+        ))}
         <ColorField label="สีฐาน" value={baseColor} onChange={setBaseColor} />
 
-        <DownloadField
-          model={model}
-          disabled={busy}
-          name={text ? `grip-${text.replace(/\s+/g, '-')}` : 'grip'}
-          topLabel="ตัวอักษร"
-          topColor={color}
-          plateColor={baseColor}
-          plateLabel="ฐานกริป"
-          onError={setError}
-          note={`พิมพ์ฐานกริปกับตัวอักษรแยกกัน (หรือ 2 สีพร้อมกัน: ลากทั้ง 2 ไฟล์เข้า Creality Print แล้วตอบ “ใช่”) · วางตัวอักษรลงร่อง ทากาว แล้วติดด้านเรียบของฐานบนฐาน griptok Ø${GRIP_DIAMETER} mm`}
-        />
+        <div className="field download">
+          <label>ดาวน์โหลดไฟล์ STL</label>
+          <div className="download-grid">
+            <button className="dl-btn" disabled={off} onClick={() => model && saveStl(model.plate, `${stem}-base.stl`)}>
+              <span className="dl-dot" style={{ background: baseColor }} />
+              ฐานกริป
+            </button>
+            {model?.parts && model.parts.length > 1 ? (
+              model.parts.map((g, i) => (
+                <button key={i} className="dl-btn" disabled={off} onClick={() => saveStl(g, `${stem}-line${i + 1}.stl`)}>
+                  <span className="dl-dot" style={{ background: colors[i] }} />
+                  บรรทัด {i + 1}
+                </button>
+              ))
+            ) : (
+              <button className="dl-btn" disabled={off} onClick={() => model && saveStl(model.text, `${stem}-text.stl`)}>
+                <span className="dl-dot" style={{ background: colors[0] }} />
+                ตัวอักษร
+              </button>
+            )}
+            {model?.parts && model.parts.length > 1 && (
+              <button className="dl-btn" disabled={off} onClick={() => model && saveStl(model.text, `${stem}-text.stl`)}>
+                ตัวอักษรทุกบรรทัด
+              </button>
+            )}
+          </div>
+          <div className="sub">
+            พิมพ์ฐานกริปกับตัวอักษรแยกกัน แต่ละบรรทัดพิมพ์สีของตัวเอง (หรือพิมพ์หลายสีพร้อมกัน: ลากทุกไฟล์เข้า Creality Print
+            แล้วตอบ “ใช่”) · วางตัวอักษรลงร่อง ทากาว แล้วติดด้านเรียบของฐานบนฐาน griptok Ø{GRIP_DIAMETER} mm
+          </div>
+        </div>
       </section>
     </main>
   )

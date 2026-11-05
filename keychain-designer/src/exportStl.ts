@@ -32,18 +32,25 @@ export function downloadStl(model: KeychainModel, part: StlPart, text: string) {
             : mergeGeometries([model.plate, model.text])
   if (!geo) throw new Error('รวมชิ้นงานไม่สำเร็จ')
 
+  saveStl(geo, `${fileStem(text)}-${SUFFIX[part]}.stl`)
+  if (part === 'all') geo.dispose()
+}
+
+/** Save one geometry as a binary STL file. */
+export function saveStl(geo: THREE.BufferGeometry, filename: string) {
   const data = new STLExporter().parse(new THREE.Mesh(geo), { binary: true }) as DataView
   const blob = new Blob([data.buffer as ArrayBuffer], { type: 'model/stl' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${fileStem(text)}-${SUFFIX[part]}.stl`
+  a.download = filename
   document.body.appendChild(a)
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
-  if (part === 'all') geo.dispose()
 }
+
+export { fileStem }
 
 /** ASCII only: Chrome drops a download name with Thai combining marks and falls back to "download". */
 function fileStem(text: string): string {

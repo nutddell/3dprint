@@ -142,7 +142,9 @@ function glyphPaths(cmds: hb.SvgPathCommand[], ox: number, oy: number, k: number
 async function textClusters(text: string, fontOpt: FontOption, sizeMm: number, trackingMm = 0): Promise<Path[][]> {
   const primary = await loadFont(fontOpt)
   const needFallback = fontOpt.script === 'latin' && Array.from(text).some(isThai)
-  const fallback = needFallback ? await loadFont(FONTS.find((f) => f.id === THAI_FALLBACK_ID)!) : null
+  // Chunky English fonts pair with the chunky Thai one; the rest with Kanit.
+  const fallbackId = fontOpt.style === 'อ้วนกลม' ? 'mitr' : THAI_FALLBACK_ID
+  const fallback = needFallback ? await loadFont(FONTS.find((f) => f.id === fallbackId)!) : null
 
   const clusters: Path[][] = []
   let pen = 0 // mm
@@ -326,6 +328,8 @@ export interface KeychainModel {
   width: number
   length: number
   height: number
+  /** Separately coloured pieces of the top part (e.g. one per griptok line); `text` is all of them merged. */
+  parts?: THREE.BufferGeometry[]
   /** Two-sided keychains: the back half, assembled under the front (for the preview) and as printed. */
   back?: {
     plate: THREE.BufferGeometry
@@ -774,7 +778,7 @@ export async function textOutline(text: string, fontOpt: FontOption, sizeMm: num
 // that is glued onto a ready-made Ø35 mm grip.
 
 export const GRIP_DIAMETER = 35 // mm, the grip it is glued on
-export const GRIP_LEVELS = [4, 3.5, 3] // mm letter heights, cycled
+export const GRIP_LETTER_HEIGHT = 4 // mm, all letters the same: reads clearer at this size
 export const GRIP_MAX_LETTERS = 12
 export const GRIP_MAX_LINES = 3
 const GRIP_FLOOR = 1 // mm base floor
@@ -809,6 +813,7 @@ function densify(paths: Path[], maxMm: number): Path[] {
 
 export interface GriptokModel extends KeychainModel {
   diameter: number
+  lineCount: number
 }
 
 const GRIP_LINE_GAP = 1.2 // mm between lines on a multi-line griptok (a rim wall stands in it)
@@ -917,12 +922,17 @@ export async function buildGriptok(text: string, fontOpt: FontOption): Promise<G
   rim = offset(offset(rim, -0.25), 0.25)
   const floor = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(base)), { depth: GRIP_FLOOR, bevelEnabled: false })
   const lip = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(rim)), { depth: GRIP_FLOOR + GRIP_LIP, bevelEnabled: false })
-  const parts = letters.map((l, i) => {
-    const g = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(l)), { depth: GRIP_LEVELS[i % GRIP_LEVELS.length], bevelEnabled: false })
+  // One solid per line (lines can take different colours and be printed separately).
+  const lineCount = Math.max(...lineOfLetter) + 1
+  const lineParts = Array.from({ length: lineCount }, (_, li) => {
+    const outline = union(letters.filter((_, j) => lineOfLetter[j] === li).flat())
+    const g = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(outline)), { depth: GRIP_LETTER_HEIGHT, bevelEnabled: false })
     g.translate(0, 0, GRIP_FLOOR)
     return g
   })
-  const body = parts.length === 1 ? parts[0] : mergeGeometries(parts)!
-  const model = centred(mergeGeometries([floor, lip])!, body, GRIP_FLOOR + Math.max(...GRIP_LEVELS.slice(0, letters.length)))
-  return { ...model, diameter: GRIP_DIAMETER }
+  const body = lineParts.length === 1 ? lineParts[0].clone() : mergeGeometries(lineParts)!
+  // The disc is centred on the origin and the letters lie inside it, so centred() moves nothing
+  // and the per-line copies stay aligned with the merged letters.
+  const model = centred(mergeGeometries([floor, lip])!, body, GRIP_FLOOR + GRIP_LETTER_HEIGHT)
+  return { ...model, parts: lineParts, diameter: GRIP_DIAMETER, lineCount }
 }

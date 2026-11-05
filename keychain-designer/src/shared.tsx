@@ -54,6 +54,7 @@ export function PreviewCard(props: {
   /** Two-sided keychains: back design colour and a switch to turn the model over. */
   backColor?: string
   flip?: { on: boolean; onToggle: () => void }
+  partColors?: string[]
 }) {
   const { model } = props
   return (
@@ -78,6 +79,7 @@ export function PreviewCard(props: {
         model={model}
         backColor={props.backColor}
         flip={props.flip?.on}
+        partColors={props.partColors}
         textColor={props.topColor}
         plateColor={props.plateColor}
         dark={props.dark}

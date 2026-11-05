@@ -338,3 +338,4 @@ input[type='range'] { width: 100%; accent-color: var(--brand-500); height: 24px;
   font-weight: 700;
 }
 .download-grid .dl-btn { min-width: 0; }
+textarea.text-input { resize: vertical; line-height: 1.5; font-family: inherit; }

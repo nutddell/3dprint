@@ -476,10 +476,10 @@ function joinLetterPieces(letter: Path[], sizeMm: number): Path[] {
  * Letters (one Path[] each, floating pieces already joined). With `joined`, each letter slides left
  * until it overlaps the ones before it; otherwise the font's own spacing is kept.
  */
-async function layoutLetters(text: string, fontOpt: FontOption, sizeMm: number, joined: boolean): Promise<Path[][]> {
+async function layoutLetters(text: string, fontOpt: FontOption, sizeMm: number, joined: boolean, overlapScale = 1): Promise<Path[][]> {
   const clusters = await textClusters(text, fontOpt, sizeMm)
   const style = joined ? 'joined' : 'base'
-  const baseOverlap = 0.025 * sizeMm * sizeMm // mm² each letter should share with the previous ones
+  const baseOverlap = 0.025 * sizeMm * sizeMm * overlapScale // mm² each letter should share with the previous ones
   const letters: Path[][] = []
   let placed: Path[] = []
   let carry = 0 // mm every following letter is moved by
@@ -489,7 +489,7 @@ async function layoutLetters(text: string, fontOpt: FontOption, sizeMm: number, 
       // Thin letters (เ, ไ, i, punctuation) cannot share much area: cap the overlap at 12% of the
       // smaller of the two neighbours so neither one gets swallowed and the word stays readable.
       const prev = letters[letters.length - 1]
-      const minOverlap = Math.min(baseOverlap, 0.12 * Math.min(Math.abs(areaMm2(letter)), Math.abs(areaMm2(prev))))
+      const minOverlap = Math.min(baseOverlap, 0.12 * overlapScale * Math.min(Math.abs(areaMm2(letter)), Math.abs(areaMm2(prev))))
       const overlapAt = (dx: number) => areaMm2(clip(shift(letter, dx), placed, ClipperLib.ClipType.ctIntersection))
       // Letters that already touch firmly (script fonts, tight kerning) stay where the font put them.
       const contact = Math.min(minOverlap, Math.max(2, 0.004 * sizeMm * sizeMm))
@@ -768,99 +768,246 @@ export async function textOutline(text: string, fontOpt: FontOption, sizeMm: num
 }
 
 // ---------------------------------------------------------------------------------------------
-// Griptok top: a short name as dimensional letters bent along a rainbow arc, in the locating
-// pocket of a round base that is glued onto a ready-made Ø35 mm phone grip.
+// Griptok top: the words fill the whole disc like a stamp. Up to three lines, each stretched to
+// the width of the circle at its height, packed against each other and trimmed round, as
+// dimensional letters in the locating pocket of a base glued onto a ready-made Ø35 mm grip.
 
 export const GRIP_DIAMETER = 35 // mm, the grip it is glued on
-export const GRIP_MAX_DIAMETER = 37 // mm, allowed only when the name would get too small otherwise
 export const GRIP_LEVELS = [4, 3.5, 3] // mm letter heights, cycled
-export const GRIP_MAX_LETTERS = 6
+export const GRIP_MAX_LETTERS = 12
+export const GRIP_MAX_LINES = 3
 const GRIP_FLOOR = 1 // mm base floor
 const GRIP_LIP = 1.2 // mm rim above the floor
 const GRIP_WALL = 1.5 // mm from the disc edge to the letters (rim wall + fit clearance)
-const GRIP_MIN_CAP = 7 // mm capital height below which the larger disc is used
+
+const THAI_MARK = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/
 
 /** Spacing (non-mark) characters: Thai vowel/tone marks above or below do not count as letters. */
 export function countLetters(text: string): number {
-  return Array.from(text.replace(/\s/g, '')).filter((ch) => !/[ัิ-ฺ็-๎]/.test(ch)).length
+  return Array.from(text.replace(/\s/g, '')).filter((ch) => !THAI_MARK.test(ch)).length
 }
 
-/** Add points so no edge is longer than maxMm (needed before bending straight edges). */
-function densify(paths: Path[], maxMm: number): Path[] {
-  const max = maxMm * S
-  return paths.map((p) => {
-    const out: Path = []
-    p.forEach((a, i) => {
-      const b = p[(i + 1) % p.length]
-      const n = Math.max(1, Math.ceil(Math.hypot(b.X - a.X, b.Y - a.Y) / max))
-      for (let k = 0; k < n; k++) out.push({ X: Math.round(a.X + ((b.X - a.X) * k) / n), Y: Math.round(a.Y + ((b.Y - a.Y) * k) / n) })
-    })
-    return out
-  })
+/**
+ * Lines for the disc. Explicit line breaks win; otherwise words become lines when there are 2–3,
+ * else the letters are shared out evenly (4 or fewer: one line, up to 8: two, more: three).
+ */
+export function gripLines(text: string): string[] {
+  const explicit = text.split(/\n/).map((l) => l.trim()).filter(Boolean)
+  if (explicit.length > 1) return explicit.slice(0, GRIP_MAX_LINES)
+  const one = explicit[0] ?? ''
+  const words = one.split(/\s+/).filter(Boolean)
+  if (words.length >= 2 && words.length <= GRIP_MAX_LINES) return words
+  const flat = words.join('')
+  const total = countLetters(flat)
+  const n = total <= 4 ? 1 : total <= 8 ? 2 : 3
+  if (n === 1) return [flat]
+  const lines: string[] = []
+  let cur = ''
+  let count = 0
+  for (const ch of Array.from(flat)) {
+    const isLetter = !THAI_MARK.test(ch)
+    // Break before a letter (never before a mark) once this line has its share.
+    if (isLetter && count >= Math.round(((lines.length + 1) * total) / n) && lines.length < n - 1) {
+      lines.push(cur)
+      cur = ''
+    }
+    cur += ch
+    if (isLetter) count++
+  }
+  lines.push(cur)
+  return lines.filter(Boolean)
 }
 
-/** Bend a straight line of text (baseline y = 0) over an arc of radius R (mm) whose top is at the origin. */
-function arch(paths: Path[], cxMm: number, R: number): Path[] {
+/** Words (Thai has no spaces, so use the browser's Thai word breaker when there is one). */
+function words(text: string): string[] {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  const Seg = (Intl as unknown as { Segmenter?: new (l: string, o: { granularity: string }) => { segment(t: string): Iterable<{ segment: string; isWordLike?: boolean }> } }).Segmenter
+  if (!Seg) return flat.split(' ')
+  const out: string[] = []
+  for (const part of new Seg('th', { granularity: 'word' }).segment(flat)) {
+    if (part.segment.trim() === '') continue
+    // Punctuation and stray marks stick to the word before them.
+    if (!part.isWordLike && out.length) out[out.length - 1] += part.segment
+    else out.push(part.segment)
+  }
+  return out
+}
+
+/**
+ * Ways to put the text on 1, 2 or 3 lines, breaking only between words and keeping the lines as
+ * even as possible. A single long word may be split between letters as a last resort.
+ */
+function splitOptions(text: string): string[][] {
+  const ws = words(text)
+  const flat = ws.join('')
+  const out: string[][] = [[flat]]
+  const size = (w: string[]) => countLetters(w.join(''))
+  for (let n = 2; n <= GRIP_MAX_LINES; n++) {
+    if (ws.length >= n) {
+      // Try every way to cut the word list into n runs; keep the most even one.
+      let best: string[] | null = null
+      let worst = Infinity
+      const cut = (start: number, left: number, acc: string[]) => {
+        if (left === 1) {
+          const lines = [...acc, ws.slice(start).join('')]
+          const counts = lines.map((l) => countLetters(l))
+          const spread = Math.max(...counts) - Math.min(...counts)
+          if (spread < worst) {
+            worst = spread
+            best = lines
+          }
+          return
+        }
+        for (let i = start + 1; i <= ws.length - left + 1; i++) cut(i, left - 1, [...acc, ws.slice(start, i).join('')])
+      }
+      cut(0, n, [])
+      if (best) out.push(best)
+    } else if (ws.length === 1 && size(ws) >= n * 3) {
+      // One long word: share its letters out (marks stay with their letter).
+      const total = size(ws)
+      const lines: string[] = []
+      let cur = ''
+      let count = 0
+      for (const ch of Array.from(flat)) {
+        const isLetter = !THAI_MARK.test(ch)
+        if (isLetter && lines.length < n - 1 && count >= Math.round(((lines.length + 1) * total) / n)) {
+          lines.push(cur)
+          cur = ''
+        }
+        cur += ch
+        if (isLetter) count++
+      }
+      lines.push(cur)
+      out.push(lines)
+    }
+  }
+  return out
+}
+
+function transform(paths: Path[], f: (x: number, y: number) => [number, number]): Path[] {
   return paths.map((p) =>
     p.map((q) => {
-      const x = q.X / S
-      const y = q.Y / S
-      const t = (x - cxMm) / R
-      const r = R + y
-      return { X: Math.round(Math.sin(t) * r * S), Y: Math.round((Math.cos(t) * r - R) * S) }
+      const [x, y] = f(q.X / S, q.Y / S)
+      return { X: Math.round(x * S), Y: Math.round(y * S) }
     }),
   )
 }
 
-function scaleAbout(paths: Path[], k: number, cx: number, cy: number): Path[] {
-  return paths.map((p) => p.map((q) => ({ X: Math.round((q.X / S - cx) * k * S), Y: Math.round((q.Y / S - cy) * k * S) })))
-}
-
 export interface GriptokModel extends KeychainModel {
   diameter: number
-  /** Capital-letter height after fitting, mm. */
-  capHeight: number
+  lines: string[]
+}
+
+const GRIP_OVERLAP_SCALE = 0.35 // letters on a griptok only need to hold, not sink into each other
+const GRIP_OVERFLOW = 1.08 // a line may reach this far past the circle; the round trim cuts it off
+const GRIP_MAX_STRETCH = 1.4
+const GRIP_MIN_STRETCH = 0.8
+
+/** Stack the lines and fit them into the disc. Returns the trimmed letters and the letter height. */
+async function fitGrip(lines: string[], fontOpt: FontOption) {
+  const REF = 20 // lay out at 20 mm (same joining rules as the keychains), then fit
+  const laid = (await Promise.all(lines.map((l) => layoutLetters(l, fontOpt, REF, true, GRIP_OVERLAP_SCALE)))).filter((l) => l.length > 0)
+  if (laid.length === 0) return null
+
+  // 1. Centre each line on x = 0 and stack them, pushing each line up into the one above until
+  //    they just hold each other.
+  const stacked: Path[][] = []
+  let above: Path[] = []
+  let bottomOfAbove = 0
+  for (const line of laid) {
+    const lb = boundsMm(union(line.flat()))
+    const cx = (lb.minX + lb.maxX) / 2
+    const start = bottomOfAbove - lb.maxY // this line's top touching the bottom of the one above
+    const at = (dy: number) => line.map((l) => transform(l, (x, y) => [x - cx, y + start + dy]))
+    let dy = 0
+    if (above.length > 0) {
+      const lh = lb.maxY - lb.minY
+      const need = 0.004 * lh * lh // just enough to hold; deeper overlaps make the lines hard to read
+      let best = { dy: 0, o: 0 }
+      for (let d = 0; d <= lh * 0.35; d += lh * 0.01) {
+        const o = areaMm2(clip(union(at(d).flat()), above, ClipperLib.ClipType.ctIntersection))
+        if (o > best.o) best = { dy: d, o }
+        if (o >= need) break
+      }
+      dy = best.dy
+    }
+    const placedLine = at(dy)
+    stacked.push(...placedLine)
+    above = union(placedLine.flat())
+    bottomOfAbove = boundsMm(above).minY
+  }
+
+  // 2. Fit: each line may be stretched sideways to fill the circle at its height and may poke out a
+  //    little past it; find the biggest scale where every line still fits.
+  const R = GRIP_DIAMETER / 2 - GRIP_WALL
+  const Ro = R * GRIP_OVERFLOW
+  const ab = boundsMm(union(stacked.flat()))
+  const midY = (ab.minY + ab.maxY) / 2
+  const letterLine = laid.flatMap((line, i) => line.map(() => i))
+  const lineBox = laid.map((_, i) => boundsMm(union(stacked.filter((_, j) => letterLine[j] === i).flat())))
+  const room = (b: ReturnType<typeof boundsMm>, k: number) => {
+    const yFar = Math.max(Math.abs((b.maxY - midY) * k), Math.abs((b.minY - midY) * k))
+    return Math.sqrt(Math.max(Ro * Ro - yFar * yFar, 0))
+  }
+  const halfW = (b: ReturnType<typeof boundsMm>, k: number) => Math.max(Math.abs(b.minX), Math.abs(b.maxX)) * k
+  const fits = (k: number) => lineBox.every((b) => halfW(b, k) * GRIP_MIN_STRETCH <= room(b, k) && room(b, k) > 0)
+  let lo = 0
+  let hi = (2 * Ro) / (ab.maxY - ab.minY)
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2
+    if (fits(mid)) lo = mid
+    else hi = mid
+  }
+  const k = lo
+  const stretch = lineBox.map((b) => Math.min(GRIP_MAX_STRETCH, Math.max(GRIP_MIN_STRETCH, room(b, k) / halfW(b, k))))
+
+  const disc = [circle(0, 0, R, 160)]
+  const band = ((ab.maxY - ab.minY) * k) / laid.length // about one line's height, for stem sizes
+  const letters: Path[][] = []
+  stacked.forEach((l, j) => {
+    const sx = stretch[letterLine[j]] * k
+    const placed = transform(l, (x, y) => [x * sx, (y - midY) * k])
+    // Trim to the circle, drop crumbs the trim leaves, re-join what is left of the letter.
+    const kept = clip(placed, disc, ClipperLib.ClipType.ctIntersection).filter(
+      (p) => Math.abs(ClipperLib.Clipper.Area(p)) / (S * S) >= 0.6 || !ClipperLib.Clipper.Orientation(p),
+    )
+    if (kept.some((p) => ClipperLib.Clipper.Orientation(p))) letters.push(joinLetterPieces(kept, band))
+  })
+  return letters.length ? { letters, band, cap: REF * k } : null
 }
 
 export async function buildGriptok(text: string, fontOpt: FontOption): Promise<GriptokModel | null> {
-  const REF = 20 // lay out at 20 mm (same rules as the keychains), then scale to fit the disc
-  const laid = await layoutLetters(text, fontOpt, REF, true)
-  if (laid.length === 0) return null
-  const lb = boundsMm(union(laid.flat()))
-  const length = lb.maxX - lb.minX
-  // Long names bend over up to ~140°, short ones get a gentle curve instead of a tight hoop.
-  const R = Math.max(length / 2.4, REF * 1.7)
-  const bent = laid.map((l) => union(arch(densify(l, 0.4), (lb.minX + lb.maxX) / 2, R)))
-  // Bending spreads the tops of the letters apart; a letter that no longer touches the ones before
-  // it gets a short stem to them (the stem belongs to that letter, so the word stays one piece).
-  let placed: Path[] = []
-  bent.forEach((l, i) => {
-    if (i > 0 && areaMm2(clip(l, placed, ClipperLib.ClipType.ctIntersection)) < 0.3) {
-      const joined = joinLetterPieces([...placed, ...l], REF)
-      bent[i] = union([...l, ...clip(joined, placed, ClipperLib.ClipType.ctDifference)])
-    }
-    placed = union([...placed, ...bent[i]])
-  })
-
-  // Fit inside the disc: centre on the bent word, scale so its farthest point clears the rim.
-  const all = union(bent.flat())
-  const b = boundsMm(all)
-  const cx = (b.minX + b.maxX) / 2
-  const cy = (b.minY + b.maxY) / 2
-  const reach = Math.max(...all.flat().map((q) => Math.hypot(q.X / S - cx, q.Y / S - cy)))
-  let diameter = GRIP_DIAMETER
-  let k = (diameter / 2 - GRIP_WALL) / reach
-  if (REF * k < GRIP_MIN_CAP) {
-    diameter = GRIP_MAX_DIAMETER
-    k = (diameter / 2 - GRIP_WALL) / reach
+  // Lines the customer chose (line breaks or 2–3 words) are kept; otherwise try 1, 2 and 3 lines
+  // and keep the one that gives the biggest letters.
+  const given = gripLines(text)
+  if (given.length === 0) return null
+  const explicit = /\n/.test(text.trim()) || given.length > 1 && text.trim().split(/\s+/).length === given.length
+  const options = explicit ? [given] : splitOptions(text)
+  let best: { lines: string[]; fit: NonNullable<Awaited<ReturnType<typeof fitGrip>>> } | null = null
+  for (const lines of options) {
+    const fit = await fitGrip(lines, fontOpt)
+    if (fit && (!best || fit.cap > best.fit.cap)) best = { lines, fit }
   }
-  const letters = bent.map((l) => scaleAbout(l, k, cx, cy))
-  const word = union(letters.flat())
+  if (!best) return null
+  const { lines } = best
+  const { letters, band } = best.fit
+  const disc = [circle(0, 0, GRIP_DIAMETER / 2 - GRIP_WALL, 160)]
 
-  const disc = [circle(0, 0, diameter / 2, 160)]
-  let rim = clip(disc, offset(word, DIM_FIT_CLEARANCE), ClipperLib.ClipType.ctDifference)
+  // Everything must print as one piece: a letter that touches none of the ones before it gets a stem.
+  let placed: Path[] = []
+  letters.forEach((l, i) => {
+    if (i > 0 && areaMm2(clip(l, placed, ClipperLib.ClipType.ctIntersection)) < 0.3) {
+      const joined = joinLetterPieces([...placed, ...l], band)
+      letters[i] = union([...l, ...clip(clip(joined, placed, ClipperLib.ClipType.ctDifference), disc, ClipperLib.ClipType.ctIntersection)])
+    }
+    placed = union([...placed, ...letters[i]])
+  })
+  const word = placed
+
+  const base = [circle(0, 0, GRIP_DIAMETER / 2, 160)]
+  let rim = clip(base, offset(word, DIM_FIT_CLEARANCE), ClipperLib.ClipType.ctDifference)
   rim = offset(offset(rim, -0.25), 0.25)
-  const floor = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(disc)), { depth: GRIP_FLOOR, bevelEnabled: false })
+  const floor = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(base)), { depth: GRIP_FLOOR, bevelEnabled: false })
   const lip = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(rim)), { depth: GRIP_FLOOR + GRIP_LIP, bevelEnabled: false })
   const parts = letters.map((l, i) => {
     const g = new THREE.ExtrudeGeometry(treeToShapes(treeFromPaths(l)), { depth: GRIP_LEVELS[i % GRIP_LEVELS.length], bevelEnabled: false })
@@ -869,5 +1016,5 @@ export async function buildGriptok(text: string, fontOpt: FontOption): Promise<G
   })
   const body = parts.length === 1 ? parts[0] : mergeGeometries(parts)!
   const model = centred(mergeGeometries([floor, lip])!, body, GRIP_FLOOR + Math.max(...GRIP_LEVELS.slice(0, letters.length)))
-  return { ...model, diameter, capHeight: REF * k }
+  return { ...model, diameter: GRIP_DIAMETER, lines }
 }

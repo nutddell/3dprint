@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { FONTS, type FontOption } from './fonts'
-import { buildGriptok, countLetters, GRIP_DIAMETER, GRIP_LEVELS, GRIP_MAX_LETTERS, type GriptokModel } from './geometry'
+import { buildGriptok, countLetters, GRIP_DIAMETER, GRIP_LEVELS, GRIP_MAX_LETTERS, GRIP_MAX_LINES, type GriptokModel } from './geometry'
 import { ColorField, DownloadField, PreviewCard } from './shared'
 import { FontGroup } from './TextTool'
 
-/** Griptok top: a short name as arched dimensional letters on a Ø35 mm base with a locating rim. */
+/** Griptok top: words filling the whole Ø35 mm disc as dimensional letters, on a base with a locating rim. */
 export default function GripTool({ dark }: { dark: boolean }) {
-  const [text, setText] = useState('Mint')
-  const [font, setFont] = useState<FontOption>(FONTS.find((f) => f.id === 'poppins')!)
+  const [text, setText] = useState('เฮง เฮง เฮง')
+  const [font, setFont] = useState<FontOption>(FONTS.find((f) => f.id === 'kanit')!)
   const [color, setColor] = useState('#f6c6d6')
   const [baseColor, setBaseColor] = useState('#ffffff')
   const [exploded, setExploded] = useState(false)
@@ -41,9 +41,10 @@ export default function GripTool({ dark }: { dark: boolean }) {
   }, [text, font])
 
   const onText = (v: string) => {
-    // Thai marks are free; anything past the sixth letter is cut off (also when pasting).
+    // Thai marks are free; anything past the letter or line limit is cut off (also when pasting).
     let out = ''
     for (const ch of Array.from(v)) {
+      if (ch === '\n' && out.split('\n').length >= GRIP_MAX_LINES) break
       if (countLetters(out + ch) > GRIP_MAX_LETTERS) break
       out += ch
     }
@@ -64,20 +65,27 @@ export default function GripTool({ dark }: { dark: boolean }) {
 
       <section className="panel card">
         <div className="field">
-          <label htmlFor="grip-text">ชื่อบนหัวกริป</label>
-          <input id="grip-text" className="text-input" value={text} placeholder="พิมพ์ชื่อ" onChange={(e) => onText(e.target.value)} />
+          <label htmlFor="grip-text">ข้อความบนหัวกริป</label>
+          <textarea
+            id="grip-text"
+            className="text-input"
+            rows={3}
+            value={text}
+            placeholder="เช่น เฮง เฮง เฮง หรือ รวย"
+            onChange={(e) => onText(e.target.value)}
+          />
           <div className="sub">
-            {letters}/{GRIP_MAX_LETTERS} ตัวอักษร (สระ/วรรณยุกต์ไม่นับ) · ตัวอักษรโค้งแบบสายรุ้ง ขยายให้พอดีวงอัตโนมัติ
+            {letters}/{GRIP_MAX_LETTERS} ตัวอักษร (สระ/วรรณยุกต์ไม่นับ) · ไม่เกิน {GRIP_MAX_LINES} บรรทัด · ตัวอักษรขยายเต็มวง
+            เว้นวรรคหรือกด Enter เพื่อขึ้นบรรทัดใหม่ ถ้าไม่แบ่งเอง ระบบจะแบ่งให้
           </div>
+          {model && model.lines.length > 1 && <div className="sub">แบ่งเป็น: {model.lines.join(' / ')}</div>}
           {error && <div className="error">{error}</div>}
         </div>
 
         <div className="field">
           <label>ขนาด</label>
           <div className="sub">
-            {model
-              ? `ฐานกลม Ø${model.diameter} mm${model.diameter > GRIP_DIAMETER ? ' (ขยายเพื่อให้ตัวอักษรไม่เล็กเกินไป)' : ''} · ตัวอักษรสูง ~${model.capHeight.toFixed(1)} mm`
-              : `ฐานกลม Ø${GRIP_DIAMETER} mm`}
+            {`ฐานกลม Ø${GRIP_DIAMETER} mm`}
             {` · ความหนาตัวอักษรไล่ระดับ ${GRIP_LEVELS.join(' / ')} mm บนฐานมีขอบล็อก`}
           </div>
         </div>
@@ -86,7 +94,7 @@ export default function GripTool({ dark }: { dark: boolean }) {
           <label>ฟอนต์</label>
           <FontGroup title="ภาษาไทย" fonts={FONTS.filter((f) => f.script === 'thai')} value={font} onChange={setFont} sample="กขค Ab" />
           <FontGroup title="ภาษาอังกฤษ" fonts={FONTS.filter((f) => f.script === 'latin')} value={font} onChange={setFont} sample="Abc 123" />
-          <div className="sub">ฟอนต์หนา (Poppins, Kanit, Prompt) เหมาะกับหัวกริปที่สุด</div>
+          <div className="sub">ฟอนต์หนา (Kanit, Prompt, Poppins) เหมาะกับหัวกริปที่สุด</div>
         </div>
 
         <ColorField label="สีตัวอักษร" value={color} onChange={setColor} />
@@ -95,7 +103,7 @@ export default function GripTool({ dark }: { dark: boolean }) {
         <DownloadField
           model={model}
           disabled={busy}
-          name={text ? `grip-${text}` : 'grip'}
+          name={text ? `grip-${text.replace(/\s+/g, '-')}` : 'grip'}
           topLabel="ตัวอักษร"
           topColor={color}
           plateColor={baseColor}

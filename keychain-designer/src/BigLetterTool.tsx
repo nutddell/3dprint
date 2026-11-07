@@ -66,24 +66,25 @@ export default function BigLetterTool({ dark }: { dark: boolean }) {
 
       <section className="panel card">
         <div className="field">
-          <label htmlFor="big-letter">ตัวอักษรใหญ่ (1 ตัว)</label>
+          <label htmlFor="big-letter">ตัวอักษรใหญ่ (กรอกเอง 1 ตัว)</label>
           <input
             id="big-letter"
             className="text-input big-letter-input"
             value={letter}
-            placeholder="A"
+            placeholder="G"
             autoComplete="off"
             onFocus={(e) => e.target.select()}
             onChange={(e) => onLetter(e.target.value)}
           />
           <div className="sub">
-            ไทยหรืออังกฤษ 1 ตัว (พิมพ์ตัวใหม่ทับได้เลย) · ขนาดเดียว: สูง {BIG_CAP} mm หนา {BIG_THICK} mm
+            ไทยหรืออังกฤษ 1 ตัว ไม่ต้องเป็นตัวแรกของชื่อ เช่น ชื่อเล่น "กอล์ฟ" ใช้ตัว G · พิมพ์ตัวใหม่ทับได้เลย ·
+            ขนาดเดียว: สูง {BIG_CAP} mm หนา {BIG_THICK} mm
           </div>
         </div>
 
         <div className="field">
-          <label htmlFor="big-name">ชื่อ (วางตามแนวแท่งที่ยาวที่สุดของตัวอักษร)</label>
-          <input id="big-name" className="text-input" value={name} maxLength={MAX_NAME} placeholder="พิมพ์ชื่อ" onChange={(e) => setName(e.target.value)} />
+          <label htmlFor="big-name">ชื่อเต็ม (กรอกเอง วางตามแนวแท่งที่ยาวที่สุดของตัวอักษรใหญ่)</label>
+          <input id="big-name" className="text-input" value={name} maxLength={MAX_NAME} placeholder="เช่น Worrasak หรือ วรศักดิ์" onChange={(e) => setName(e.target.value)} />
           <div className="sub">
             {Array.from(name).length}/{MAX_NAME} ตัวอักษร · ขนาดชื่อย่อขยายให้พอดีเอง
             {model && model.nameHeight > 0 && ` (สูง ~${model.nameHeight.toFixed(1)} mm)`}

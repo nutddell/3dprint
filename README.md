@@ -11,3 +11,8 @@
 
 `print3d-queue-gas/` ย้ายมาจาก `nutddell/dev_ot` (branch `claude/intelligent-wozniak-u9rda7`) พร้อมประวัติ commit
 วิธี deploy ดูใน [`print3d-queue-gas/README.md`](print3d-queue-gas/README.md)
+
+## Deploy เว็บหน้าร้าน (keychain-designer)
+- **Vercel** (project `3ddesign`): Root Directory = `keychain-designer` (Vite ตรวจเจอเอง)
+- **Cloudflare Workers**: Path = `/keychain-designer`, Build = `npm run build`, Deploy = `npx wrangler deploy`
+  (ใช้ `keychain-designer/wrangler.jsonc` ซึ่งเสิร์ฟไฟล์ใน `dist` เป็น static assets)

@@ -1,0 +1,10 @@
+// Cloudflare Workers (static assets only): serves the Vite build in ./dist.
+// Dashboard settings: Path = /keychain-designer, Build = npm run build, Deploy = npx wrangler deploy
+{
+  "name": "3dprint",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

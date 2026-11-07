@@ -114,8 +114,8 @@ button { font: inherit; color: inherit; }
 /* ---- Tool tabs ---- */
 .tools {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
   margin-bottom: 16px;
 }
 .tool {
@@ -348,3 +348,6 @@ textarea.text-input { resize: vertical; line-height: 1.5; font-family: inherit; 
 .setting { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
 .setting input { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--field); color: var(--text); }
 .setting small { color: var(--muted); font-size: 11px; }
+
+.big-letter-input { font-size: 28px; font-weight: 800; width: 90px; text-align: center; }
+.swatch.gold { background: linear-gradient(135deg, #e9cf74, #b8901f 55%, #f3dc8a) !important; }

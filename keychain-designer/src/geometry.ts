@@ -1089,3 +1089,162 @@ export async function buildClicker(text: string, fontOpt: FontOption, p: Clicker
     nameHeight,
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Big letter keychain: one chunky initial, fixed size, with the full name raised along its
+// longest straight stroke (found automatically), and the loop at the top of the letter.
+
+export const BIG_CAP = 55 // mm capital height of the big letter
+export const BIG_THICK = 7 // mm
+const BIG_NAME_RAISE = 1.2 // mm the name stands on the letter
+const BIG_NAME_INSET = 1.6 // mm the name keeps from the letter's edges
+const BIG_PX = 0.5 // mm raster step for the stroke search
+
+/**
+ * The longest straight band inside the shape for text of the given width/height ratio:
+ * tries every direction (text never upside down) and every band height, returns the band
+ * centre, direction and the text height that fits best.
+ */
+function longestStrip(shape: Path[], aspect: number) {
+  let best = { size: 0, theta: 0, cx: 0, cy: 0 }
+  for (let deg = -90; deg <= 90; deg += 5) {
+    const t = (deg * Math.PI) / 180
+    const c = Math.cos(t)
+    const s = Math.sin(t)
+    // Rotate the shape by -t so the candidate direction becomes horizontal.
+    const rot = shape.map((p) => p.map((q) => ({ x: (q.X / S) * c + (q.Y / S) * s, y: -(q.X / S) * s + (q.Y / S) * c })))
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const p of rot)
+      for (const q of p) {
+        minX = Math.min(minX, q.x)
+        maxX = Math.max(maxX, q.x)
+        minY = Math.min(minY, q.y)
+        maxY = Math.max(maxY, q.y)
+      }
+    const cols = Math.ceil((maxX - minX) / BIG_PX) + 1
+    const rows = Math.ceil((maxY - minY) / BIG_PX) + 1
+    // Scanline fill (even-odd) of the rotated shape.
+    const inside = new Uint8Array(cols * rows)
+    for (let r = 0; r < rows; r++) {
+      const y = minY + (r + 0.5) * BIG_PX
+      const xs: number[] = []
+      for (const p of rot)
+        for (let i = 0; i < p.length; i++) {
+          const a = p[i]
+          const b = p[(i + 1) % p.length]
+          if (a.y <= y !== b.y <= y) xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x))
+        }
+      xs.sort((u, v) => u - v)
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const c0 = Math.max(0, Math.ceil((xs[k] - minX) / BIG_PX - 0.5))
+        const c1 = Math.min(cols - 1, Math.floor((xs[k + 1] - minX) / BIG_PX - 0.5))
+        for (let col = c0; col <= c1; col++) inside[r * cols + col] = 1
+      }
+    }
+    // up[r][c] = how many inside pixels in a row from r downwards (a vertical run).
+    const run = new Uint16Array(cols * rows)
+    for (let r = rows - 1; r >= 0; r--)
+      for (let col = 0; col < cols; col++) run[r * cols + col] = inside[r * cols + col] ? 1 + (r + 1 < rows ? run[(r + 1) * cols + col] : 0) : 0
+    for (let hPx = 6; hPx <= rows; hPx += 2) {
+      for (let r = 0; r + hPx <= rows; r++) {
+        let len = 0
+        for (let col = 0; col <= cols; col++) {
+          if (col < cols && run[r * cols + col] >= hPx) {
+            len++
+            continue
+          }
+          if (len > 0) {
+            const h = hPx * BIG_PX
+            const w = len * BIG_PX
+            const size = Math.min(h, w / aspect) // text height that fits this band
+            if (size > best.size) {
+              const bx = minX + (col - len / 2) * BIG_PX
+              const by = minY + (r + hPx / 2) * BIG_PX
+              best = { size, theta: t, cx: bx * c - by * s, cy: bx * s + by * c }
+            }
+          }
+          len = 0
+        }
+      }
+    }
+  }
+  return best
+}
+
+function transform(paths: Path[], f: (x: number, y: number) => [number, number]): Path[] {
+  return paths.map((p) =>
+    p.map((q) => {
+      const [x, y] = f(q.X / S, q.Y / S)
+      return { X: Math.round(x * S), Y: Math.round(y * S) }
+    }),
+  )
+}
+
+export interface BigLetterModel extends KeychainModel {
+  nameHeight: number
+}
+
+export async function buildBigLetter(
+  letter: string,
+  fontOpt: FontOption,
+  name: string,
+  ring: RingOptions = { side: 'top', holeDiameter: 5 },
+): Promise<BigLetterModel | null> {
+  const raw = union(await textOutlines(letter, fontOpt, BIG_CAP))
+  if (raw.length === 0) return null
+  const lb = boundsMm(raw)
+  const shape = centreOn(raw, (lb.minX + lb.maxX) / 2, (lb.minY + lb.maxY) / 2)
+  const b = boundsMm(shape)
+
+  // Name along the longest stroke.
+  let namePaths: Path[] = []
+  let nameHeight = 0
+  if (name.trim()) {
+    const kanit = FONTS.find((f) => f.id === 'kanit')!
+    const nraw = await textOutline(name.trim(), kanit, 10)
+    if (nraw.length) {
+      const nb = boundsMm(nraw)
+      const nw = nb.maxX - nb.minX
+      const nh = nb.maxY - nb.minY
+      const room = offset(shape, -BIG_NAME_INSET)
+      const strip = longestStrip(room, nw / nh)
+      if (strip.size > 0) {
+        const k = (strip.size * 0.92) / nh
+        const c = Math.cos(strip.theta)
+        const s = Math.sin(strip.theta)
+        const ncx = (nb.minX + nb.maxX) / 2
+        const ncy = (nb.minY + nb.maxY) / 2
+        const placed = transform(nraw, (x, y) => {
+          const u = (x - ncx) * k
+          const v = (y - ncy) * k
+          return [strip.cx + u * c - v * s, strip.cy + u * s + v * c]
+        })
+        namePaths = clip(placed, room, ClipperLib.ClipType.ctIntersection)
+        nameHeight = nh * k
+      }
+    }
+  }
+
+  // Loop: on top, over the top of the left-most arm (like the photo); centred otherwise.
+  let anchor: number | undefined
+  if (ring.side === 'top' || ring.side === 'bottom') {
+    const band = ring.side === 'top' ? rect(b.minX - 1, b.maxY - 6, b.maxX + 1, b.maxY + 1) : rect(b.minX - 1, b.minY - 1, b.maxX + 1, b.minY + 6)
+    const pieces = treeFromPaths(clip(shape, [band], ClipperLib.ClipType.ctIntersection)).Childs()
+    if (pieces.length) {
+      const leftmost = pieces
+        .map((n) => ClipperLib.Clipper.GetBounds([n.Contour()]))
+        .sort((x, y) => x.left - y.left)[0]
+      anchor = (leftmost.left + leftmost.right) / 2 / S
+    }
+  }
+  if (anchor === undefined) anchor = ring.side === 'left' || ring.side === 'right' ? (b.minY + b.maxY) / 2 : (b.minX + b.maxX) / 2
+  const body = ClipperLib.Clipper.PolyTreeToPaths(plateOutline(shape, ring, anchor, { grow: 0, close: 0, fillHoles: false }))
+  const plate = slab(body, 0, BIG_THICK)
+  const top = namePaths.length ? slab(namePaths, BIG_THICK, BIG_THICK + BIG_NAME_RAISE) : new THREE.BufferGeometry()
+  const model = centred(plate, namePaths.length ? top : plate.clone(), BIG_THICK + (namePaths.length ? BIG_NAME_RAISE : 0))
+  if (!namePaths.length) model.text = new THREE.BufferGeometry()
+  return { ...model, nameHeight }
+}

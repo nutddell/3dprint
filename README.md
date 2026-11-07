@@ -5,7 +5,7 @@
 | โฟลเดอร์ | งาน | รันบน |
 |---|---|---|
 | [`print3d-queue-gas/`](print3d-queue-gas/) | ระบบหลังร้าน: คิวงานพิมพ์ คำสั่งงาน สต็อก filament การจัดการระบบ | Google Apps Script (Sheet "3DPrint JOB") |
-| [`keychain-designer/`](keychain-designer/) | เว็บหน้าร้าน: การทำพวงกุญแจ 3D (จากข้อความ), ทำพวงกุญแจจากรูป (2 สี), พวงกุญแจตัวอักษรมิติ พวงกุญแจชื่อ + โลโก้ (หน้า-หลัง) หัว Griptok ชื่อตัวอักษรมิติ และ Clicker-Namechain ดูตัวอย่าง 3D และโหลด STL | Vercel (project `3ddesign`, https://3ddesign-beta.vercel.app) |
+| [`keychain-designer/`](keychain-designer/) | เว็บหน้าร้าน: การทำพวงกุญแจ 3D (จากข้อความ), ทำพวงกุญแจจากรูป (2 สี), พวงกุญแจตัวอักษรมิติ พวงกุญแจชื่อ + โลโก้ (หน้า-หลัง) หัว Griptok ชื่อตัวอักษรมิติ, Clicker-Namechain และพวงกุญแจ-อักษรบิ๊กเบิ้ม ดูตัวอย่าง 3D และโหลด STL | Vercel (project `3ddesign`, https://3ddesign-beta.vercel.app) |
 
 ดีไซน์ สี และโลโก้ที่ทุกเว็บใช้ร่วมกัน อยู่ใน [`BRAND.md`](BRAND.md)
 

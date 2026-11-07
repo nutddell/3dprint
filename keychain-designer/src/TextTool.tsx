@@ -1,5 +1,6 @@
+import { FontPicker } from './FontPicker'
 import { useEffect, useRef, useState } from 'react'
-import { FONTS, fontFamily, type FontOption } from './fonts'
+import { FONTS, type FontOption } from './fonts'
 import { buildKeychain, DEFAULT_RING, type KeychainModel, type RingOptions } from './geometry'
 import { ColorField, DownloadField, PreviewCard, RingField } from './shared'
 
@@ -43,8 +44,6 @@ export default function TextTool({ dark }: { dark: boolean }) {
     return () => clearTimeout(t)
   }, [text, font, size, ring])
 
-  const thaiFonts = FONTS.filter((f) => f.script === 'thai')
-  const latinFonts = FONTS.filter((f) => f.script === 'latin')
 
   return (
     <main className="workspace">
@@ -93,8 +92,7 @@ export default function TextTool({ dark }: { dark: boolean }) {
 
         <div className="field">
           <label>ฟอนต์ (ฟรี ใช้เชิงพาณิชย์ได้)</label>
-          <FontGroup title="ภาษาไทย" fonts={thaiFonts} value={font} onChange={setFont} sample="กขค Ab" />
-          <FontGroup title="ภาษาอังกฤษ" fonts={latinFonts} value={font} onChange={setFont} sample="Abc 123" />
+          <FontPicker value={font} onChange={setFont} />
           <div className="sub">ฟอนต์ภาษาอังกฤษจะใช้ Kanit กับตัวอักษรไทย</div>
         </div>
 
@@ -114,35 +112,5 @@ export default function TextTool({ dark }: { dark: boolean }) {
         />
       </section>
     </main>
-  )
-}
-
-export function FontGroup(props: {
-  title: string
-  fonts: FontOption[]
-  value: FontOption
-  onChange: (f: FontOption) => void
-  sample: string
-}) {
-  return (
-    <div className="font-group">
-      <div className="font-group-title">{props.title}</div>
-      <div className="font-grid">
-        {props.fonts.map((f) => (
-          <button
-            key={f.id}
-            className={`font-btn ${props.value.id === f.id ? 'selected' : ''}`}
-            onClick={() => props.onChange(f)}
-            aria-pressed={props.value.id === f.id}
-          >
-            <span className="font-sample" style={{ fontFamily: `'${fontFamily(f)}', sans-serif` }}>
-              {props.sample}
-            </span>
-            <span className="font-name">{f.name}</span>
-            <span className={`font-tag ${f.style === 'ทางการ' ? 'formal' : f.style === 'อ้วนกลม' ? 'chunky' : 'casual'}`}>{f.style}</span>
-          </button>
-        ))}
-      </div>
-    </div>
   )
 }

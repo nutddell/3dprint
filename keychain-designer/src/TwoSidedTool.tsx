@@ -13,7 +13,7 @@ import {
 } from './geometry'
 import { inkField, loadImage, traceImage, type LoadedImage } from './imageTrace'
 import { ColorField, PreviewCard, RingField } from './shared'
-import { FontGroup } from './TextTool'
+import { FontPicker } from './FontPicker'
 import type { Path } from './units'
 
 const MAX_CHARS = 16
@@ -147,8 +147,7 @@ export default function TwoSidedTool({ dark }: { dark: boolean }) {
 
         <div className="field">
           <label>ฟอนต์</label>
-          <FontGroup title="ภาษาไทย" fonts={FONTS.filter((f) => f.script === 'thai')} value={font} onChange={setFont} sample="กขค Ab" />
-          <FontGroup title="ภาษาอังกฤษ" fonts={FONTS.filter((f) => f.script === 'latin')} value={font} onChange={setFont} sample="Abc 123" />
+          <FontPicker value={font} onChange={setFont} />
         </div>
 
         <div className="field">

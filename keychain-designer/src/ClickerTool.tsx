@@ -3,7 +3,7 @@ import { fileStem, saveStl } from './exportStl'
 import { FONTS, type FontOption } from './fonts'
 import { buildClicker, CLICKER_LENGTH, CLICKER_WIDTH, MX_DEFAULTS, type ClickerModel, type ClickerParams } from './geometry'
 import { ColorField, PreviewCard } from './shared'
-import { FontGroup } from './TextTool'
+import { FontPicker } from './FontPicker'
 
 const MAX_CHARS = 12
 const SETTINGS_KEY = 'clicker-switch'
@@ -99,8 +99,7 @@ export default function ClickerTool({ dark }: { dark: boolean }) {
 
         <div className="field">
           <label>ฟอนต์</label>
-          <FontGroup title="ภาษาไทย" fonts={FONTS.filter((f) => f.script === 'thai')} value={font} onChange={setFont} sample="กขค Ab" />
-          <FontGroup title="ภาษาอังกฤษ" fonts={FONTS.filter((f) => f.script === 'latin')} value={font} onChange={setFont} sample="Abc 123" />
+          <FontPicker value={font} onChange={setFont} />
         </div>
 
         <ColorField label="สีตัวเรือนและฝา" value={bodyColor} onChange={setBodyColor} />

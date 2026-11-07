@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FONTS, type FontOption } from './fonts'
 import { buildDimensional, DEFAULT_RING, DIM_BASE_THICKNESS, DIM_LEVELS, type DimStyle, type KeychainModel, type RingOptions } from './geometry'
 import { ColorField, DownloadField, PreviewCard, RingField } from './shared'
-import { FontGroup } from './TextTool'
+import { FontPicker } from './FontPicker'
 
 const MAX_CHARS = 16
 
@@ -100,8 +100,7 @@ export default function DimTool({ dark }: { dark: boolean }) {
 
         <div className="field">
           <label>ฟอนต์ (ฟรี ใช้เชิงพาณิชย์ได้)</label>
-          <FontGroup title="ภาษาไทย" fonts={FONTS.filter((f) => f.script === 'thai')} value={font} onChange={setFont} sample="กขค Ab" />
-          <FontGroup title="ภาษาอังกฤษ" fonts={FONTS.filter((f) => f.script === 'latin')} value={font} onChange={setFont} sample="Abc 123" />
+          <FontPicker value={font} onChange={setFont} />
           <div className="sub">ฟอนต์หนา (Poppins, Kanit, Prompt) เหมาะกับงานนี้ที่สุด · เว้นวรรคจะถูกบีบให้ชิดกัน</div>
         </div>
 

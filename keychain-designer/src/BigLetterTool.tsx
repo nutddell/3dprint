@@ -2,10 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { FONTS, type FontOption } from './fonts'
 import { BIG_CAP, BIG_THICK, buildBigLetter, countLetters, type BigLetterModel, type RingOptions } from './geometry'
 import { ColorField, DownloadField, PreviewCard, RingField } from './shared'
-import { FontGroup } from './TextTool'
+import { FontPicker } from './FontPicker'
 
 /** Heavy, solid fonts only: the big letter should look weighty. */
-const HEAVY = ['kanit', 'prompt', 'mitr', 'poppins', 'bebas', 'bagel', 'titan']
+const HEAVY = [
+  'kanit', 'prompt', 'mitr', 'chonburi', 'baijamjuree', 'chakrapetch',
+  'poppins', 'bebas', 'montserrat', 'archivoblack', 'anton', 'unbounded', 'rubik', 'russo',
+  'bagel', 'titan', 'fredoka', 'lilita', 'luckiest', 'sigmar', 'passion',
+  'bungee', 'blackops', 'rubikmono', 'alfaslab', 'shrikhand',
+]
 const NAME_COLORS = [
   { hex: '#ffffff', name: 'ขาว' },
   { hex: '#1f1f1f', name: 'ดำ' },
@@ -94,8 +99,7 @@ export default function BigLetterTool({ dark }: { dark: boolean }) {
 
         <div className="field">
           <label>ฟอนต์ตัวอักษรใหญ่ (หนา หนักแน่น)</label>
-          <FontGroup title="ภาษาไทย" fonts={FONTS.filter((f) => f.script === 'thai' && HEAVY.includes(f.id))} value={font} onChange={setFont} sample="กขค Ab" />
-          <FontGroup title="ภาษาอังกฤษ" fonts={FONTS.filter((f) => f.script === 'latin' && HEAVY.includes(f.id))} value={font} onChange={setFont} sample="ABC 123" />
+          <FontPicker value={font} onChange={setFont} fonts={FONTS.filter((f) => HEAVY.includes(f.id))} />
         </div>
 
         <RingField value={ring} onChange={setRing} />

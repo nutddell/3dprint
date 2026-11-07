@@ -85,7 +85,15 @@ npm run build    # ได้ไฟล์ใน dist/
 
 
 ## ฟอนต์
-ไทย: Sarabun, Prompt, Kanit (ทางการ) · Mali, Sriracha (ไม่เป็นทางการ)
-อังกฤษ: Poppins, Bebas Neue (ทางการ) · Pacifico, Lobster, Permanent Marker (ไม่เป็นทางการ)
-อ้วนกลม: Mitr (ไทย), Bagel Fat One, Titan One (อังกฤษ) · Bagel Fat One ตัดเหลือเฉพาะตัวละติน (ต้นฉบับมีภาษาเกาหลี 1.5 MB)
-ฟอนต์อังกฤษจะใช้ Kanit กับตัวอักษรไทย (ฟอนต์อ้วนกลมจะใช้ Mitr) ทุกฟอนต์ใช้เชิงพาณิชย์ได้ (SIL OFL 1.1 / Apache 2.0, ดู `public/fonts/`)
+68 ฟอนต์ (ไทย 27, อังกฤษ 41) แบ่ง 5 สไตล์: ทางการ, โมเดิร์น, อ้วนกลม, ดีไซน์, ไม่เป็นทางการ (`src/fonts.ts`)
+เลือกผ่าน `FontPicker` (`src/FontPicker.tsx`) กรองตามภาษาและสไตล์ได้ ไฟล์ฟอนต์โหลดเฉพาะตัวที่แสดงบนจอ
+- ไทย: Sarabun, Prompt, Kanit, IBM Plex Sans Thai, Anuphan, Krub, Taviraj, Trirong, Pridi, Bai Jamjuree, Chakra Petch,
+  K2D, Athiti, Niramit, Kodchasan, KoHo, Thasadith, Mitr, Chonburi, Fahkwang, Charmonman, Srisakdi, Mali, Sriracha, Itim, Charm, Pattaya
+- อังกฤษ: Poppins, Bebas Neue, Montserrat, Oswald, Space Grotesk, Syne, Unbounded, Rubik, Orbitron, Audiowide, Russo One,
+  Righteous, Quicksand, Comfortaa, Teko, Anton, Archivo Black, Staatliches, Bagel Fat One, Titan One, Fredoka, Chewy,
+  Lilita One, Luckiest Guy, Sigmar One, Passion One, Bungee, Black Ops One, Press Start 2P, Rubik Mono One, Abril Fatface,
+  Alfa Slab One, Shrikhand, Bangers, Racing Sans One, Fugaz One, Pacifico, Lobster, Permanent Marker, Dancing Script, Caveat
+- ฟอนต์อังกฤษใช้ Kanit กับตัวอักษรไทย (ฟอนต์อ้วนกลมใช้ Mitr)
+- ฟอนต์แบบ variable ถูกตัดเป็นไฟล์ Bold (700) คงที่ ให้พิมพ์ออกมาหนาพอ · Bagel Fat One ตัดเหลือเฉพาะตัวละติน
+- ลิขสิทธิ์: ทุกฟอนต์ใช้เชิงพาณิชย์ได้ — SIL OFL 1.1 (`public/fonts/OFL.txt`) ยกเว้น Permanent Marker, Luckiest Guy, Chewy
+  ที่เป็น Apache 2.0 (`public/fonts/LICENSE-Apache-2.0.txt`)

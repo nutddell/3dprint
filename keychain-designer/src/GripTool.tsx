@@ -3,7 +3,7 @@ import { FONTS, type FontOption } from './fonts'
 import { saveStl, fileStem } from './exportStl'
 import { buildGriptok, countLetters, GRIP_DIAMETER, GRIP_LETTER_HEIGHT, GRIP_MAX_LETTERS, GRIP_MAX_LINES, type GriptokModel } from './geometry'
 import { ColorField, PreviewCard } from './shared'
-import { FontGroup } from './TextTool'
+import { FontPicker } from './FontPicker'
 
 /** Griptok top: one word warped to fill the whole Ø35 mm disc as dimensional letters, on a base with a locating rim. */
 export default function GripTool({ dark }: { dark: boolean }) {
@@ -99,8 +99,7 @@ export default function GripTool({ dark }: { dark: boolean }) {
 
         <div className="field">
           <label>ฟอนต์</label>
-          <FontGroup title="ภาษาไทย" fonts={FONTS.filter((f) => f.script === 'thai')} value={font} onChange={setFont} sample="กขค Ab" />
-          <FontGroup title="ภาษาอังกฤษ" fonts={FONTS.filter((f) => f.script === 'latin')} value={font} onChange={setFont} sample="Abc 123" />
+          <FontPicker value={font} onChange={setFont} />
           <div className="sub">ฟอนต์อ้วนกลม (Mitr, Bagel Fat One, Titan One) เหมาะกับหัวกริปที่สุด</div>
         </div>
 

@@ -49,12 +49,13 @@ export default function BigLetterTool({ dark }: { dark: boolean }) {
     return () => clearTimeout(t)
   }, [letter, font, name, ring])
 
-  // One letter: keep its Thai vowel/tone marks, drop anything after a second letter.
+  // One letter: the latest letter typed replaces the old one; Thai vowel/tone marks typed after
+  // it stay with it.
   const onLetter = (v: string) => {
     let out = ''
     for (const ch of Array.from(v.replace(/\s/g, ''))) {
-      if (countLetters(out + ch) > 1) break
-      out += ch
+      if (countLetters(ch) === 1) out = ch // a new letter starts over
+      else if (out) out += ch // a mark joins the current letter
     }
     setLetter(out)
   }
@@ -66,9 +67,17 @@ export default function BigLetterTool({ dark }: { dark: boolean }) {
       <section className="panel card">
         <div className="field">
           <label htmlFor="big-letter">ตัวอักษรใหญ่ (1 ตัว)</label>
-          <input id="big-letter" className="text-input big-letter-input" value={letter} placeholder="A" onChange={(e) => onLetter(e.target.value)} />
+          <input
+            id="big-letter"
+            className="text-input big-letter-input"
+            value={letter}
+            placeholder="A"
+            autoComplete="off"
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => onLetter(e.target.value)}
+          />
           <div className="sub">
-            ขนาดเดียว: สูง {BIG_CAP} mm หนา {BIG_THICK} mm
+            ไทยหรืออังกฤษ 1 ตัว (พิมพ์ตัวใหม่ทับได้เลย) · ขนาดเดียว: สูง {BIG_CAP} mm หนา {BIG_THICK} mm
           </div>
         </div>
 

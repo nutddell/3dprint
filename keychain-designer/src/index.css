@@ -404,3 +404,4 @@ textarea.text-input { resize: vertical; line-height: 1.5; font-family: inherit; 
 :root[data-theme='dark'] .font-tag.design { color: #ff8db0; }
 .dl-btn small { font-weight: 400; color: var(--muted); }
 .dl-btn.primary small { color: rgba(255,255,255,0.8); }
+.download-grid.sign-row { margin-top: 6px; }

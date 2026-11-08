@@ -1257,14 +1257,65 @@ export async function buildBigLetter(
 export const SIGN_BED = 260 // mm, each letter fits in this square
 export const SIGN_PITCH = 280 // mm between letters in the combined file (one letter per plate)
 
-export interface SignModel extends KeychainModel {
-  /** One wall shell per letter, laid out SIGN_PITCH apart along x. */
-  letters: { label: string; geometry: THREE.BufferGeometry; width: number; length: number }[]
-  /** Capital height after fitting, mm. */
-  capHeight: number
+export const SIGN_LIP = 8 // mm inner mounting lip at the bottom
+const SIGN_LIP_THICK = 2.5
+const SIGN_HOLE = 4 // mm screw holes in the lip
+const SIGN_HOLE_SPACING = 80 // mm between screw holes along the lip
+export const SIGN_FACE = 2.5 // mm face panel thickness
+const SIGN_LEDGE = 2.5 // mm ledge the face rests on
+const SIGN_LEDGE_THICK = 1.5
+const SIGN_FACE_CLEAR = 0.3 // mm per side between face and wall
+
+export type SignMount = 'screw' | 'glue'
+
+export interface SignLetter {
+  label: string
+  /** Frame (walls + inner lip + ledge), assembled position. */
+  frame: THREE.BufferGeometry
+  /** Face panel, assembled position (sitting in the top of the frame). */
+  face: THREE.BufferGeometry
+  width: number
+  length: number
 }
 
-export async function buildSignLetters(text: string, fontOpt: FontOption, heightMm: number, wallMm: number): Promise<SignModel | null> {
+export interface SignModel extends KeychainModel {
+  letters: SignLetter[]
+  /** Capital height after fitting, mm. */
+  capHeight: number
+  holes: number
+}
+
+/** Screw hole centres spaced along each loop of the lip's centre line. */
+function holeSpots(centre: Path[]): [number, number][] {
+  const spots: [number, number][] = []
+  for (const loop of centre) {
+    const pts = loop.map((q) => [q.X / S, q.Y / S])
+    const seg = pts.map((p, i) => Math.hypot(pts[(i + 1) % pts.length][0] - p[0], pts[(i + 1) % pts.length][1] - p[1]))
+    const total = seg.reduce((a, b) => a + b, 0)
+    const n = total < SIGN_HOLE_SPACING * 0.6 ? (total > 25 ? 1 : 0) : Math.max(2, Math.round(total / SIGN_HOLE_SPACING))
+    for (let k = 0; k < n; k++) {
+      let d = ((k + 0.5) / n) * total
+      for (let i = 0; i < pts.length; i++) {
+        if (d <= seg[i]) {
+          const t = seg[i] ? d / seg[i] : 0
+          const nx = pts[(i + 1) % pts.length]
+          spots.push([pts[i][0] + (nx[0] - pts[i][0]) * t, pts[i][1] + (nx[1] - pts[i][1]) * t])
+          break
+        }
+        d -= seg[i]
+      }
+    }
+  }
+  return spots
+}
+
+export async function buildSignLetters(
+  text: string,
+  fontOpt: FontOption,
+  heightMm: number,
+  wallMm: number,
+  mount: SignMount = 'screw',
+): Promise<SignModel | null> {
   const chars = Array.from(text.replace(/\s+/g, ''))
   if (chars.length === 0) return null
   const REF = 100
@@ -1273,47 +1324,79 @@ export async function buildSignLetters(text: string, fontOpt: FontOption, height
   // Labels for the download buttons: each spacing character with the marks that follow it.
   const labels: string[] = []
   for (const ch of chars) {
-    if (/[ัิ-ฺ็-๎]/.test(ch) && labels.length) labels[labels.length - 1] += ch
+    if (/[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/.test(ch) && labels.length) labels[labels.length - 1] += ch
     else labels.push(ch)
   }
 
   const shapes = clusters.map((c) => union(c))
-  const boxes = shapes.map((s) => boundsMm(s))
+  const boxes = shapes.map((sh) => boundsMm(sh))
   const maxW = Math.max(...boxes.map((b) => b.maxX - b.minX))
   const maxH = Math.max(...boxes.map((b) => b.maxY - b.minY))
   const k = Math.min(SIGN_BED / maxW, SIGN_BED / maxH)
+  const H = heightMm
+  const faceBottom = H - SIGN_FACE
 
-  const letters: SignModel['letters'] = []
+  const letters: SignLetter[] = []
+  let holeCount = 0
   shapes.forEach((shape, i) => {
     const b = boxes[i]
     const cx = (b.minX + b.maxX) / 2
-    // Same baseline for every letter (they read as a word in the preview), centred on its own slot.
-    const placed = scaleAbout(shape, k, cx, 0).map((p) => p.map((q) => ({ X: q.X + Math.round(i * SIGN_PITCH * S), Y: q.Y })))
-    // Wall = the letter minus the letter shrunk by the wall thickness (counters get walls too).
-    let wall = clip(placed, offset(placed, -wallMm), ClipperLib.ClipType.ctDifference)
-    wall = offset(offset(wall, -0.3), 0.3) // drop slivers too thin to print
+    // Same baseline for every letter (they read as a word in the preview), each in its own slot.
+    const L = scaleAbout(shape, k, cx, 0).map((p) => p.map((q) => ({ X: q.X + Math.round(i * SIGN_PITCH * S), Y: q.Y })))
+    const clean = (paths: Path[]) => offset(offset(paths, -0.3), 0.3) // drop slivers too thin to print
+    const inside = offset(L, -wallMm) // the hollow inside the walls
+    const wall = clean(clip(L, inside, ClipperLib.ClipType.ctDifference))
     if (wall.length === 0) return
-    const g = slab(wall, 0, heightMm)
+    const intoWall = offset(L, -(wallMm - 0.5)) // inner bands reach 0.5 mm into the wall so they fuse
+
+    // Bottom lip, inside the frame (hidden), with screw holes along its middle.
+    let lip = clean(clip(intoWall, offset(L, -(wallMm + SIGN_LIP)), ClipperLib.ClipType.ctDifference))
+    if (mount === 'screw' && lip.length) {
+      const spots = holeSpots(offset(L, -(wallMm + SIGN_LIP / 2)))
+      holeCount += spots.length
+      if (spots.length) lip = clip(lip, spots.map(([x, y]) => circle(x, y, SIGN_HOLE / 2, 32)), ClipperLib.ClipType.ctDifference)
+    }
+
+    // Ledge for the face, with a 45° chamfer underneath (printable upright without supports).
+    const parts = [slab(wall, 0, H)]
+    if (lip.length) parts.push(slab(lip, 0, SIGN_LIP_THICK))
+    const ledgeTop = faceBottom
+    const ledge = clean(clip(intoWall, offset(L, -(wallMm + SIGN_LEDGE)), ClipperLib.ClipType.ctDifference))
+    if (ledge.length) parts.push(slab(ledge, ledgeTop - SIGN_LEDGE_THICK, ledgeTop))
+    const steps = 5
+    for (let s2 = 1; s2 < steps; s2++) {
+      const w = SIGN_LEDGE * (1 - s2 / steps)
+      const band = clean(clip(intoWall, offset(L, -(wallMm + w)), ClipperLib.ClipType.ctDifference))
+      const z1 = ledgeTop - SIGN_LEDGE_THICK - (s2 - 1) * (SIGN_LEDGE / steps)
+      if (band.length) parts.push(slab(band, z1 - SIGN_LEDGE / steps, z1))
+    }
+    const frame = mergeGeometries(parts)!
+
+    // Face panel: the hollow's shape minus a small clearance, flush with the top of the frame.
+    const faceOutline = clean(offset(L, -(wallMm + SIGN_FACE_CLEAR)))
+    const face = faceOutline.length ? slab(faceOutline, faceBottom, H) : new THREE.BufferGeometry()
+
     const wb = boundsMm(wall)
-    letters.push({ label: labels[i] ?? '?', geometry: g, width: wb.maxX - wb.minX, length: wb.maxY - wb.minY })
+    letters.push({ label: labels[i] ?? '?', frame, face, width: wb.maxX - wb.minX, length: wb.maxY - wb.minY })
   })
   if (letters.length === 0) return null
 
-  const all = letters.length === 1 ? letters[0].geometry.clone() : mergeGeometries(letters.map((l) => l.geometry))!
-  all.computeBoundingBox()
-  const bb = all.boundingBox!
+  const frames = letters.length === 1 ? letters[0].frame.clone() : mergeGeometries(letters.map((l) => l.frame))!
+  const faces = letters.length === 1 ? letters[0].face.clone() : mergeGeometries(letters.map((l) => l.face).filter((g) => g.getAttribute('position')))!
+  frames.computeBoundingBox()
+  const bb = frames.boundingBox!
   // Centre the whole word for the preview; the per-letter copies move the same way.
   const dx = -(bb.min.x + bb.max.x) / 2
   const dy = -(bb.min.y + bb.max.y) / 2
-  all.translate(dx, dy, 0)
-  for (const l of letters) l.geometry.translate(dx, dy, 0)
+  for (const g of [frames, faces, ...letters.flatMap((l) => [l.frame, l.face])]) if (g.getAttribute('position')) g.translate(dx, dy, 0)
   return {
-    plate: all,
-    text: new THREE.BufferGeometry(),
+    plate: frames,
+    text: faces,
     width: bb.max.x - bb.min.x,
     length: bb.max.y - bb.min.y,
-    height: heightMm,
+    height: H,
     letters,
     capHeight: REF * k,
+    holes: holeCount,
   }
 }

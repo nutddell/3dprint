@@ -81,7 +81,7 @@ export default function Preview({ model, textColor, plateColor, dark, lift = 0, 
     rim.position.set(80, 40, -60)
     scene.add(rim)
 
-    const grid = new THREE.GridHelper(400, 40)
+    const grid = new THREE.GridHelper(2000, 200)
     scene.add(grid)
 
     // Keychain is modelled in XY (mm) with thickness along Z; lay it flat on the grid.
@@ -100,7 +100,7 @@ export default function Preview({ model, textColor, plateColor, dark, lift = 0, 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
     controls.minDistance = 20
-    controls.maxDistance = 800
+    controls.maxDistance = 4000 // signs are over a metre wide
 
     const render = () => renderer.render(scene, camera)
     const s: Scene3D = { renderer, camera, controls, scene, group, stand, pivot, flipTarget: 0, backMat, plateMat, textMat, grid, fitWidth: 0, needsFit: false, host, top: new THREE.Group(), partMats: [], liftTarget: 0, render }
@@ -203,7 +203,7 @@ export default function Preview({ model, textColor, plateColor, dark, lift = 0, 
     // GridHelper bakes its colours into vertex colours, so rebuild it for the theme.
     s.scene.remove(s.grid)
     s.grid.dispose()
-    s.grid = dark ? new THREE.GridHelper(400, 40, 0x4a3f7a, 0x2c2552) : new THREE.GridHelper(400, 40, 0xc9bfe8, 0xe4def5)
+    s.grid = dark ? new THREE.GridHelper(2000, 200, 0x4a3f7a, 0x2c2552) : new THREE.GridHelper(2000, 200, 0xc9bfe8, 0xe4def5)
     s.grid.position.y = -0.05
     s.scene.add(s.grid)
   }, [dark])

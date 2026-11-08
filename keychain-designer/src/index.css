@@ -114,7 +114,7 @@ button { font: inherit; color: inherit; }
 /* ---- Tool tabs ---- */
 .tools {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -402,3 +402,5 @@ textarea.text-input { resize: vertical; line-height: 1.5; font-family: inherit; 
 .font-tag.design { background: rgba(214, 40, 90, 0.12); color: #b0234f; }
 :root[data-theme='dark'] .font-tag.modern { color: #5fd6c2; }
 :root[data-theme='dark'] .font-tag.design { color: #ff8db0; }
+.dl-btn small { font-weight: 400; color: var(--muted); }
+.dl-btn.primary small { color: rgba(255,255,255,0.8); }

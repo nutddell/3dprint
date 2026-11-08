@@ -1248,3 +1248,72 @@ export async function buildBigLetter(
   if (!namePaths.length) model.text = new THREE.BufferGeometry()
   return { ...model, nameHeight }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Sign letters ("channel letters"): one big hollow letter per piece for an LED sign. Each piece
+// is only the wall around the letter (and around its counters), open top and bottom, sized so
+// every letter of the word fits a 260 × 260 mm print bed at one shared scale.
+
+export const SIGN_BED = 260 // mm, each letter fits in this square
+export const SIGN_PITCH = 280 // mm between letters in the combined file (one letter per plate)
+
+export interface SignModel extends KeychainModel {
+  /** One wall shell per letter, laid out SIGN_PITCH apart along x. */
+  letters: { label: string; geometry: THREE.BufferGeometry; width: number; length: number }[]
+  /** Capital height after fitting, mm. */
+  capHeight: number
+}
+
+export async function buildSignLetters(text: string, fontOpt: FontOption, heightMm: number, wallMm: number): Promise<SignModel | null> {
+  const chars = Array.from(text.replace(/\s+/g, ''))
+  if (chars.length === 0) return null
+  const REF = 100
+  const clusters = await textClusters(text.replace(/\s+/g, ''), fontOpt, REF)
+  if (clusters.length === 0) return null
+  // Labels for the download buttons: each spacing character with the marks that follow it.
+  const labels: string[] = []
+  for (const ch of chars) {
+    if (/[ัิ-ฺ็-๎]/.test(ch) && labels.length) labels[labels.length - 1] += ch
+    else labels.push(ch)
+  }
+
+  const shapes = clusters.map((c) => union(c))
+  const boxes = shapes.map((s) => boundsMm(s))
+  const maxW = Math.max(...boxes.map((b) => b.maxX - b.minX))
+  const maxH = Math.max(...boxes.map((b) => b.maxY - b.minY))
+  const k = Math.min(SIGN_BED / maxW, SIGN_BED / maxH)
+
+  const letters: SignModel['letters'] = []
+  shapes.forEach((shape, i) => {
+    const b = boxes[i]
+    const cx = (b.minX + b.maxX) / 2
+    // Same baseline for every letter (they read as a word in the preview), centred on its own slot.
+    const placed = scaleAbout(shape, k, cx, 0).map((p) => p.map((q) => ({ X: q.X + Math.round(i * SIGN_PITCH * S), Y: q.Y })))
+    // Wall = the letter minus the letter shrunk by the wall thickness (counters get walls too).
+    let wall = clip(placed, offset(placed, -wallMm), ClipperLib.ClipType.ctDifference)
+    wall = offset(offset(wall, -0.3), 0.3) // drop slivers too thin to print
+    if (wall.length === 0) return
+    const g = slab(wall, 0, heightMm)
+    const wb = boundsMm(wall)
+    letters.push({ label: labels[i] ?? '?', geometry: g, width: wb.maxX - wb.minX, length: wb.maxY - wb.minY })
+  })
+  if (letters.length === 0) return null
+
+  const all = letters.length === 1 ? letters[0].geometry.clone() : mergeGeometries(letters.map((l) => l.geometry))!
+  all.computeBoundingBox()
+  const bb = all.boundingBox!
+  // Centre the whole word for the preview; the per-letter copies move the same way.
+  const dx = -(bb.min.x + bb.max.x) / 2
+  const dy = -(bb.min.y + bb.max.y) / 2
+  all.translate(dx, dy, 0)
+  for (const l of letters) l.geometry.translate(dx, dy, 0)
+  return {
+    plate: all,
+    text: new THREE.BufferGeometry(),
+    width: bb.max.x - bb.min.x,
+    length: bb.max.y - bb.min.y,
+    height: heightMm,
+    letters,
+    capHeight: REF * k,
+  }
+}
